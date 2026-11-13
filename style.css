@@ -1,0 +1,157 @@
+:root {
+  --bg: #F6F4EE; --card: #FFFFFF; --line: #E6E2D8; --line2: #CFCABC;
+  --green: #1F5C4A; --green-d: #16453A; --green-l: #E3EFE9;
+  --red: #8C1D18; --red-l: #F9E3E0; --amber: #7A4A00; --amber-l: #FBEBCF;
+  --text: #1A1F1C; --muted: #5B635E; --seg: #E9E5D9;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', sans-serif; font-size: 16px; }
+button, input, select, textarea { font-family: inherit; font-size: 16px; color: inherit; }
+a { color: var(--green); }
+#app { max-width: 480px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; position: relative; }
+.screen { padding: 20px 20px 160px; display: flex; flex-direction: column; gap: 12px; }
+.screen.form { padding-bottom: 130px; }
+.hidden { display: none !important; }
+
+/* শীর্ষ অংশ */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; }
+.top h1 { margin: 0; font-size: 26px; font-weight: 700; line-height: 1.3; }
+.top .sub { font-size: 14px; color: var(--muted); display: block; }
+.back { width: 44px; height: 44px; border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; }
+.title-row { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
+.title-row h1 { margin: 0; font-size: 24px; font-weight: 700; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.icon-btn { width: 44px; height: 44px; border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+/* সিঙ্ক অবস্থা */
+.sync { display: flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 500;
+  border: 0; cursor: pointer; background: var(--green-l); color: var(--green-d); }
+.sync.warn { background: var(--amber-l); color: var(--amber); }
+.sync.bad { background: var(--red-l); color: var(--red); }
+.sync.gray { background: var(--seg); color: #3F4743; }
+
+/* হিরো কার্ড */
+.hero { background: var(--green); color: #fff; border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.hero .lbl { font-size: 14px; }
+.hero .big { font-size: 36px; font-weight: 700; line-height: 1.3; }
+.hero .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.hero .mini { background: rgba(255,255,255,.14); border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; }
+.hero .mini span { font-size: 12px; }
+.hero .mini b { font-size: 17px; font-weight: 600; }
+.hero .meta { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.hero .meta div { display: flex; align-items: center; gap: 8px; }
+.hero .meta a { color: #fff; }
+
+/* সেগমেন্ট */
+.seg { display: grid; gap: 4px; background: var(--seg); border-radius: 14px; padding: 4px; }
+.seg.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.seg button { height: 42px; border: 0; border-radius: 11px; background: transparent; color: #3F4743; font-size: 15px; font-weight: 500; cursor: pointer; }
+.seg button.active { background: var(--green); color: #fff; font-weight: 600; }
+.seg button.active.red { background: var(--red); }
+
+/* তালিকা */
+.sec-h { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.sec-h h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.sec-h span { font-size: 13px; color: var(--muted); }
+.item { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; align-items: center; gap: 12px;
+  text-decoration: none; color: inherit; cursor: pointer; }
+.avatar { width: 44px; height: 44px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+.item .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item .mid b { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.item .mid small { font-size: 13px; color: var(--muted); }
+.item .end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.item .end b { font-size: 16px; font-weight: 700; }
+.chip { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.t-red { background: var(--red-l); color: var(--red); }
+.t-amber { background: var(--amber-l); color: var(--amber); }
+.t-green { background: var(--green-l); color: var(--green-d); }
+.t-gray { background: var(--seg); color: #3F4743; }
+.empty { background: var(--card); border: 1px dashed var(--line2); border-radius: 16px; padding: 24px 16px; text-align: center; color: var(--muted); line-height: 1.7; }
+
+/* নিচের বাটন ও নেভিগেশন */
+.fab { position: fixed; bottom: 88px; right: max(20px, calc(50vw - 240px + 20px)); display: flex; align-items: center; gap: 8px; background: var(--green); color: #fff;
+  text-decoration: none; border: 0; border-radius: 999px; padding: 0 20px; height: 52px; font-size: 16px; font-weight: 600; box-shadow: 0 6px 16px rgba(31,92,74,.35); cursor: pointer; z-index: 5; }
+.nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; height: 72px; background: #fff; border-top: 1px solid var(--line); display: flex; z-index: 10; }
+.nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 500; color: var(--muted); text-decoration: none; }
+.nav a.active { color: var(--green); font-weight: 700; }
+.nav a.soon { opacity: .55; }
+.bottom-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; padding: 10px 20px 20px; background: linear-gradient(to top, var(--bg) 78%, rgba(246,244,238,0)); display: flex; gap: 12px; z-index: 10; }
+.btn { flex: 1; height: 54px; border-radius: 16px; border: 2px solid var(--green); background: var(--green); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.btn.outline { background: #fff; color: var(--green-d); }
+.btn.danger { background: #fff; color: var(--red); border-color: var(--red-l); }
+.btn.small { height: 44px; font-size: 15px; border-radius: 12px; flex: none; padding: 0 16px; }
+.btn:disabled { opacity: .55; cursor: default; }
+
+/* ফর্ম */
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label, .field .lbl { font-size: 14px; font-weight: 600; }
+.field input[type=text], .field input[type=date], .field input[type=tel], .field select, .field textarea {
+  height: 48px; border: 1px solid var(--line2); border-radius: 14px; background: #fff; padding: 0 16px; width: 100%; }
+.field textarea { height: auto; padding: 12px 16px; line-height: 1.6; resize: none; }
+.field input.amount { height: 56px; border: 2px solid var(--green); font-size: 24px; font-weight: 700; }
+.field input.amount.red { border-color: var(--red); }
+.field input:focus, .field select:focus, .field textarea:focus { outline: 3px solid rgba(31,92,74,.25); }
+.field .hint { font-size: 13px; color: var(--muted); }
+.field .err { font-size: 13px; color: var(--red); font-weight: 600; }
+.row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { height: 40px; padding: 0 14px; border-radius: 999px; background: #fff; border: 1px solid var(--line2); color: #3F4743; font-size: 14px; cursor: pointer; }
+.pill.active { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
+.check { background: var(--green-l); border-radius: 14px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; cursor: pointer; border: 0; width: 100%; text-align: left; }
+.check .box { width: 24px; height: 24px; border-radius: 7px; background: #fff; border: 2px solid var(--green); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.check.on .box { background: var(--green); }
+.check span.t { font-size: 14px; font-weight: 600; color: var(--green-d); }
+.preview { background: #fff; border: 1px dashed var(--green); border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; }
+.preview b { font-size: 20px; color: var(--green-d); }
+.note-box { background: var(--green-l); border-radius: 14px; padding: 12px 14px; font-size: 13px; line-height: 1.6; color: var(--green-d); }
+.warn-box { background: var(--amber-l); border-radius: 14px; padding: 12px 14px; font-size: 14px; line-height: 1.6; color: var(--amber); }
+
+/* লেনদেন */
+.tx { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+.tx .ic { width: 40px; height: 40px; border-radius: 999px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tx .mid { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.tx .mid b { font-size: 15px; font-weight: 600; }
+.tx .mid small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.tx .amt { font-size: 16px; font-weight: 700; }
+.tx .x { background: none; border: 0; padding: 6px; cursor: pointer; color: var(--muted); }
+.linkcard { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; text-decoration: none; color: inherit; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.linkcard .mid { flex: 1; display: flex; flex-direction: column; }
+.linkcard .mid b { font-size: 15px; font-weight: 600; }
+.linkcard .mid small { font-size: 13px; color: var(--muted); }
+
+/* সেটিং */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.card h3 { margin: 0; font-size: 16px; }
+.card p { margin: 0; font-size: 14px; line-height: 1.7; color: #3F4743; }
+.kv { display: flex; justify-content: space-between; font-size: 14px; gap: 12px; }
+.kv span:last-child { font-weight: 600; text-align: right; }
+
+/* চুক্তিপত্র */
+.paper-wrap { background: var(--seg); border-radius: 12px; padding: 12px; }
+.contract-paper { background: #fff; border: 1px solid var(--line2); border-radius: 4px; padding: 20px 18px; color: #1A1F1C; font-size: 14px; line-height: 1.7;
+  display: flex; flex-direction: column; gap: 10px; }
+.contract-paper .c-head { text-align: center; }
+.contract-paper .c-title { font-size: 22px; font-weight: 700; }
+.contract-paper .c-date { font-size: 13px; color: #5B635E; }
+.contract-paper .c-block { border-top: 1px solid var(--line); padding-top: 8px; }
+.contract-paper p { margin: 0 0 4px; overflow-wrap: anywhere; }
+.contract-paper .c-close { font-size: 13px; color: #3F4743; }
+.contract-paper .sigs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 20px; margin-top: 14px; }
+.contract-paper .sig { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: #3F4743; }
+.contract-paper .sig-line { height: 34px; border-bottom: 1px solid #1A1F1C; }
+.contract-paper .sig small { color: #1A1F1C; }
+.pdf-holder { position: absolute; left: -10000px; top: 0; width: 794px; background: #fff; }
+.pdf-holder .contract-paper { font-size: 17px; padding: 48px 44px; border: 0; }
+.pdf-holder .contract-paper .c-title { font-size: 30px; }
+
+/* ছোট বার্তা */
+.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: #1A1F1C; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 14px;
+  z-index: 50; max-width: 90%; text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: #fff; width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.sheet h3 { margin: 0; font-size: 18px; }
+.sheet p { margin: 0; line-height: 1.7; color: #3F4743; }
+.sheet .acts { display: flex; gap: 12px; }
