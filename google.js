@@ -180,7 +180,46 @@
         status.calMsg = 'রিমাইন্ডার সেট হয়নি (' + (e.message || e) + ')';
       });
     });
+    Store.getState().duas.filter(function (d) { return d.calDirty; }).forEach(function (dua) {
+      chain = chain.then(function () {
+        return pushDuaEvents(dua).then(function (ids) {
+          dua.eventIds = ids; dua.calDirty = false; Store.save(true);
+        });
+      }).catch(function (e) {
+        status.calMsg = 'দোয়ার রিমাইন্ডার সেট হয়নি (' + (e.message || e) + ')';
+      });
+    });
     return chain;
+  }
+
+  /* দোয়ার রিমাইন্ডার: প্রতিদিন নির্দিষ্ট সময়ে পুনরাবৃত্ত ইভেন্ট (প্রতি সময়ের জন্য একটি) */
+  function duaEventBody(dua, time) {
+    var hh = time.split(':'), endM = (+hh[0]) * 60 + (+hh[1]) + 10;
+    var end = ('0' + Math.floor(endM / 60) % 24).slice(-2) + ':' + ('0' + endM % 60).slice(-2);
+    return {
+      summary: 'দোয়া: ' + dua.title + ' (' + U.toBn(dua.target) + ' বার)',
+      description: (dua.arabic ? dua.arabic + '\n' : '') + (dua.meaning || ''),
+      start: { dateTime: U.todayISO() + 'T' + time + ':00', timeZone: TZ },
+      end: { dateTime: U.todayISO() + 'T' + end + ':00', timeZone: TZ },
+      recurrence: ['RRULE:FREQ=DAILY'],
+      reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] },
+      extendedProperties: { private: { rinDuaId: dua.id } }
+    };
+  }
+
+  function pushDuaEvents(dua) {
+    var chain = Promise.resolve();
+    (dua.eventIds || []).forEach(function (id) { chain = chain.then(function () { return deleteEvent(id); }); });
+    var ids = [];
+    if (!dua.deleted) {
+      (dua.times || []).forEach(function (t) {
+        chain = chain.then(function () {
+          return api(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(duaEventBody(dua, t)) })
+            .then(function (r) { ids.push(r.id); });
+        });
+      });
+    }
+    return chain.then(function () { return ids; });
   }
 
   /* পরীক্ষামূলক রিমাইন্ডার: ৫ মিনিট পরে ক্যালেন্ডারে নোটিফিকেশন আসবে */

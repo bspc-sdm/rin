@@ -27,7 +27,7 @@
     chart: '<path d="M5 20V10M12 20V4M19 20v-7"/>',
     book: '<path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13C17 4 14 4.5 12 6zM12 6v13"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
-    edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>'
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>', minus: '<path d="M5 12h14"/>'
   };
   function ic(name, size, color, w) {
     return '<svg width="' + (size || 22) + '" height="' + (size || 22) + '" viewBox="0 0 24 24" fill="none" stroke="' + (color || 'currentColor') +
@@ -103,7 +103,7 @@
         (soon ? ' data-act="soon"' : '') + '>' + ic(icon, 24, 'currentColor', 2) + '<span>' + label + '</span></a>';
     }
     return '<nav class="nav" aria-label="প্রধান মেনু">' + tab('home', 'ঋণ', 'wallet', '#/') +
-      tab('money', 'আয়-ব্যয়', 'chart', '', true) + tab('dua', 'দোয়া', 'book', '', true) +
+      tab('money', 'আয়-ব্যয়', 'chart', '#/money') + tab('dua', 'দোয়া', 'book', '#/dua') +
       tab('settings', 'সেটিং', 'gear', '#/settings') + '</nav>';
   }
 
@@ -426,9 +426,240 @@
       '<button class="btn outline small" data-act="backup">ব্যাকআপ ডাউনলোড (JSON)</button>' +
       '<label class="btn outline small" style="cursor:pointer">ব্যাকআপ থেকে ফিরিয়ে আনুন<input type="file" id="restore-file" accept=".json,application/json" class="hidden"></label></div>';
     if (installPrompt) html += '<div class="card"><h3>অ্যাপ ইনস্টল</h3><p>হোম স্ক্রিনে অ্যাপের মতো রাখতে ইনস্টল করুন।</p><button class="btn small" data-act="install">ইনস্টল করুন</button></div>';
-    html += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ১ • v1.0</span></div>' +
+    html += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ৩ • v2.0</span></div>' +
       '<div class="kv"><span>ঋণের সংখ্যা</span><span>' + bn(S.liveLoans().length) + 'টি</span></div></div></div>' + nav('settings');
     render(html);
+  }
+
+  /* =====================================================
+     ধাপ ৩: আয়-ব্যয় ও রিপোর্ট
+     ===================================================== */
+  var fin = { kind: 'month', anchor: U.todayISO(), from: '', to: '', cv: 'expense', allCats: false, allList: false };
+  var FIN_TABS = [['day', 'দৈনিক'], ['week', 'সাপ্তাহিক'], ['month', 'মাসিক'], ['year', 'বাৎসরিক'], ['custom', 'কাস্টম']];
+
+  function signed(p) { return p < 0 ? '− ' + U.formatTaka(-p) : U.formatTaka(p); }
+  function finRange() {
+    if (fin.kind === 'custom') {
+      if (!fin.from) fin.from = U.addDays(U.todayISO(), -29);
+      if (!fin.to) fin.to = U.todayISO();
+      var f = fin.from, t = fin.to;
+      if (t < f) { var x = f; f = t; t = x; }
+      return { from: f, to: t, label: U.formatDateShort(f) + ' – ' + U.formatDate(t) };
+    }
+    return S.rangeFor(fin.kind, fin.anchor);
+  }
+  function entryRow(e) {
+    var inc = e.type === 'income';
+    var sub = U.formatDateShort(e.date) + (e.note ? ' • ' + h(e.note) : '');
+    return '<div class="tx"><div class="ic ' + (inc ? 't-green' : 't-red') + '">' + ic(inc ? 'plus' : 'minus', 18, 'currentColor', 2.6) + '</div>' +
+      '<div class="mid"><b>' + h(e.cat) + '</b><small>' + sub + (e.derived ? ' • ঋণের হিসাব থেকে' : '') + '</small></div>' +
+      '<span class="amt" style="color:' + (inc ? '#16453A' : '#8C1D18') + '">' + (inc ? '+ ' : '− ') + U.formatTaka(e.amount) + '</span>' +
+      (e.derived ? '<a class="x" href="#/loan/' + h(e.loanId) + '" aria-label="ঋণ দেখুন">' + ic('chev', 18, 'currentColor', 2.4) + '</a>'
+        : '<button class="x" data-act="del-entry" data-arg="' + h(e.id) + '" aria-label="মুছুন">' + ic('x', 18, 'currentColor', 2.4) + '</button>') + '</div>';
+  }
+  function barsHtml(list, total, red) {
+    return list.map(function (c) {
+      var pct = total > 0 ? Math.round(c.total * 100 / total) : 0;
+      return '<div class="bar-row"><div class="top2"><b>' + h(c.name) + '</b><span>' + U.formatTaka(c.total) + ' • ' + bn(pct) + '%</span></div>' +
+        '<div class="track"><div class="fill' + (red ? ' red' : '') + '" style="width:' + Math.max(pct, 2) + '%"></div></div></div>';
+    }).join('');
+  }
+
+  function vMoney() {
+    var rng = finRange(), rep = S.report(rng.from, rng.to);
+    var html = '<div class="screen"><div class="top"><div><span class="sub">হিসাব</span><h1>আয়-ব্যয়</h1></div>' + chipHtml() + '</div>' +
+      '<div class="hero"><div><div class="lbl">ব্যালেন্স (আয় − ব্যয়)</div><div class="big">' + signed(rep.balance) + '</div></div>' +
+      '<div class="grid2"><div class="mini"><span>মোট আয়</span><b>' + U.formatTaka(rep.income) + '</b></div>' +
+      '<div class="mini"><span>মোট ব্যয়</span><b>' + U.formatTaka(rep.expense) + '</b></div></div></div>' +
+      '<div class="seg c5">' + FIN_TABS.map(function (t) {
+        return '<button data-act="fin-kind" data-arg="' + t[0] + '" class="' + (fin.kind === t[0] ? 'active' : '') + '">' + t[1] + '</button>';
+      }).join('') + '</div>';
+    if (fin.kind === 'custom') {
+      html += '<div class="row2"><div class="field"><label for="r-from">শুরু</label><input type="date" id="r-from" value="' + h(rng.from) + '"></div>' +
+        '<div class="field"><label for="r-to">শেষ</label><input type="date" id="r-to" value="' + h(rng.to) + '"></div></div>';
+    } else {
+      html += '<div class="period"><button data-act="fin-prev" aria-label="আগের">' + ic('back', 20, 'currentColor', 2.4) + '</button><b>' + h(rng.label) +
+        '</b><button data-act="fin-next" aria-label="পরের"><span style="display:inline-flex;transform:rotate(180deg)">' + ic('back', 20, 'currentColor', 2.4) + '</span></button></div>';
+    }
+    var isEx = fin.cv === 'expense', list = isEx ? rep.exCats : rep.inCats, total = isEx ? rep.expense : rep.income;
+    html += '<div class="seg c2"><button data-act="fin-cv" data-arg="expense" class="' + (isEx ? 'active red' : '') + '">ব্যয়ের খাত</button>' +
+      '<button data-act="fin-cv" data-arg="income" class="' + (!isEx ? 'active' : '') + '">আয়ের খাত</button></div>';
+    if (!list.length) html += '<div class="empty">এই সময়ে কোনো ' + (isEx ? 'ব্যয়' : 'আয়') + ' নেই।</div>';
+    else {
+      var shown = fin.allCats ? list : list.slice(0, 5);
+      html += '<div class="bars">' + barsHtml(shown, total, isEx) +
+        (list.length > 5 ? '<button class="linkbtn" data-act="fin-allcats">' + (fin.allCats ? 'কম দেখুন' : 'আরও দেখুন (আরও ' + bn(list.length - 5) + 'টি খাত)') + '</button>' : '') + '</div>';
+    }
+    html += '<div class="sec-h"><h2>লেনদেন (' + bn(rep.items.length) + 'টি)</h2><span>নতুন আগে</span></div>';
+    if (!rep.items.length) html += '<div class="empty">এই সময়ে কোনো লেনদেন নেই। নিচের বাটন চেপে যোগ করুন।</div>';
+    else {
+      html += (fin.allList ? rep.items : rep.items.slice(0, 10)).map(entryRow).join('');
+      if (rep.items.length > 10) html += '<button class="linkbtn" data-act="fin-alllist">' + (fin.allList ? 'কম দেখুন' : 'সব ' + bn(rep.items.length) + 'টি দেখুন') + '</button>';
+    }
+    html += '<button class="btn outline small" style="margin-top:6px" data-act="report-pdf">' + ic('download', 18, 'currentColor', 2.2) + 'এই রিপোর্ট পিডিএফ</button>' +
+      '</div><div class="bottom-bar"><a class="btn" href="#/entry">' + ic('plus', 18, '#fff', 2.6) + ' নতুন আয় / ব্যয়</a></div>' + nav('money');
+    render(html);
+  }
+
+  function reportHtml(rep, label) {
+    function rows(list) {
+      return list.length ? list.map(function (c) { return '<tr><td>' + h(c.name) + '</td><td class="n">' + U.formatTaka(c.total) + '</td></tr>'; }).join('')
+        : '<tr><td colspan="2">নেই</td></tr>';
+    }
+    var items = rep.items.map(function (e) {
+      var inc = e.type === 'income';
+      return '<tr><td>' + U.formatDateShort(e.date) + '</td><td>' + h(e.cat) + (e.note ? ' — ' + h(e.note) : '') + '</td><td class="n">' +
+        (inc ? '+ ' : '− ') + U.formatTaka(e.amount) + '</td></tr>';
+    }).join('');
+    return '<div class="report-paper"><h1>আয়-ব্যয় রিপোর্ট</h1><div class="rp-sub">' + h(label) + '</div>' +
+      '<div class="rp-tot"><div><small>মোট আয়</small><b>' + U.formatTaka(rep.income) + '</b></div><div><small>মোট ব্যয়</small><b>' + U.formatTaka(rep.expense) +
+      '</b></div><div><small>ব্যালেন্স</small><b>' + signed(rep.balance) + '</b></div></div>' +
+      '<h2>আয়ের খাত</h2><table>' + rows(rep.inCats) + '</table><h2>ব্যয়ের খাত</h2><table>' + rows(rep.exCats) + '</table>' +
+      '<h2>সব লেনদেন</h2><table><tr><th>তারিখ</th><th>খাত / নোট</th><th class="n">টাকা</th></tr>' + (items || '<tr><td colspan="3">নেই</td></tr>') + '</table></div>';
+  }
+  function reportPdf() {
+    if (busy) return;
+    var rng = finRange(), rep = S.report(rng.from, rng.to);
+    busy = true; toast('রিপোর্ট তৈরি হচ্ছে…');
+    C.htmlToPdf(reportHtml(rep, rng.label)).then(function (blob) {
+      C.download(blob, ('আয়-ব্যয়-' + rng.from + '-' + rng.to + '.pdf')); toast('ডাউনলোড হয়েছে');
+    }).catch(function (e) {
+      toast(e && e.message === 'lib_load_failed' ? 'পিডিএফ বানাতে ইন্টারনেট লাগবে' : 'পিডিএফ বানানো যায়নি');
+    }).then(function () { busy = false; });
+  }
+
+  function collectEntry() {
+    var m = { amount: 'f-amount', date: 'f-date', note: 'f-note', cat: 'e-cat' };
+    Object.keys(m).forEach(function (k) {
+      var e = document.getElementById(m[k]);
+      if (e && !(k === 'cat' && e.value === '__new')) draft[k] = e.value;
+    });
+  }
+  function vEntry() {
+    if (!draft) draft = { type: 'expense', amount: '', cat: '', date: U.todayISO(), note: '', newCat: false };
+    var isEx = draft.type === 'expense', list = S.cats(draft.type);
+    if (!draft.cat || list.indexOf(draft.cat) < 0) draft.cat = list[0];
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/money" aria-label="ফিরে যান">' + ic('back') + '</a><h1>নতুন ' + (isEx ? 'ব্যয়' : 'আয়') + '</h1></div>' +
+      '<div class="seg c2"><button data-act="entry-type" data-arg="expense" class="' + (isEx ? 'active red' : '') + '">ব্যয়</button>' +
+      '<button data-act="entry-type" data-arg="income" class="' + (!isEx ? 'active' : '') + '">আয়</button></div>' +
+      '<div class="field"><label for="f-amount">টাকার পরিমাণ</label><input type="text" inputmode="decimal" class="amount ' + (isEx ? 'red' : '') + '" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
+      '<div class="field"><label for="e-cat">' + (isEx ? 'ব্যয়ের খাত' : 'আয়ের খাত') + '</label><select id="e-cat">' +
+      list.map(function (c) { return '<option value="' + h(c) + '"' + (c === draft.cat ? ' selected' : '') + '>' + h(c) + '</option>'; }).join('') +
+      '<option value="__new">＋ নতুন খাত যোগ করুন…</option></select></div>';
+    if (draft.newCat) {
+      html += '<div class="field"><label for="e-newcat">নতুন খাতের নাম</label><div class="newcat"><input type="text" id="e-newcat" autocomplete="off">' +
+        '<button class="btn small" data-act="entry-addcat">যোগ</button></div>' + errHtml('cat') + '</div>';
+    }
+    html += '<div class="field"><label for="f-date">তারিখ</label><input type="date" id="f-date" value="' + h(draft.date) + '">' + errHtml('date') + '</div>' +
+      '<div class="field"><label for="f-note">নোট (ঐচ্ছিক)</label><input type="text" id="f-note" value="' + h(draft.note) + '" autocomplete="off"></div>' +
+      '</div><div class="bottom-bar"><button class="btn" data-act="save-entry">সেভ করুন</button></div>';
+    render(html);
+  }
+  function saveEntry() {
+    collectEntry();
+    var errors = {}, a = U.parseAmount(draft.amount);
+    if (isNaN(a) || a <= 0) errors.amount = 'সঠিক টাকার পরিমাণ লিখুন';
+    if (!draft.date) errors.date = 'তারিখ দিন';
+    if (!draft.cat) errors.cat = 'খাত বেছে নিন';
+    if (Object.keys(errors).length) { draft.errors = errors; vEntry(); return; }
+    S.addEntry({ type: draft.type, cat: draft.cat, amount: a, date: draft.date, note: draft.note.trim() });
+    fin.kind = fin.kind === 'custom' ? 'custom' : fin.kind; fin.anchor = draft.date > U.todayISO() ? draft.date : (fin.kind === 'custom' ? fin.anchor : draft.date);
+    afterChange(); toast('সেভ হয়েছে'); go('#/money');
+  }
+
+  /* =====================================================
+     ধাপ ২: দোয়া
+     ===================================================== */
+  var SAMPLE_DUA = {
+    title: 'ঋণ পরিশোধের দোয়া',
+    arabic: 'اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ',
+    meaning: 'হে আল্লাহ, আপনি আপনার হালাল দিয়ে আমাকে হারাম থেকে যথেষ্ট করে দিন এবং আপনার অনুগ্রহে আপনি ছাড়া অন্য সবার থেকে আমাকে অমুখাপেক্ষী করুন।',
+    target: '100', times: ['05:30', '21:00']
+  };
+  function duaPercent(d, n) { return Math.min(100, Math.round(n * 100 / Math.max(1, d.target))); }
+  function daysHtml(d) {
+    var max = Math.max(d.target, 1);
+    return S.duaLastDays(d, U.todayISO(), 7).map(function (x) {
+      var hgt = Math.max(6, Math.min(56, Math.round(x.n * 56 / max)));
+      return '<div><i class="' + (x.n >= d.target ? 'ok' : '') + '" style="height:' + hgt + 'px"></i><span>' + bn(x.n) + '</span></div>';
+    }).join('');
+  }
+  function vDua() {
+    var list = S.liveDuas(), today = U.todayISO();
+    var html = '<div class="screen"><div class="top"><div><span class="sub">প্রতিদিনের আমল</span><h1>দোয়া</h1></div>' + chipHtml() + '</div>';
+    if (!list.length) {
+      html += '<div class="empty">কোনো দোয়া যোগ করা নেই। নিজের দোয়া লিখতে পারেন, অথবা নিচের নমুনা দিয়ে শুরু করুন।</div>' +
+        '<a class="btn" href="#/dua/new">নতুন দোয়া যোগ করুন</a><a class="btn outline" href="#/dua/new/sample">ঋণ পরিশোধের দোয়া দিয়ে শুরু</a></div>' + nav('dua');
+      render(html); return;
+    }
+    var sel = localStorage.getItem('rin_dua'), d = S.getDua(sel) || list[0];
+    localStorage.setItem('rin_dua', d.id);
+    var n = S.duaCount(d, today), pct = duaPercent(d, n);
+    html += '<div class="duasel"><select id="dua-sel" aria-label="দোয়া বাছুন">' + list.map(function (x) {
+      return '<option value="' + h(x.id) + '"' + (x.id === d.id ? ' selected' : '') + '>' + h(x.title) + '</option>';
+    }).join('') + '</select><a class="btn small" href="#/dua/new">' + ic('plus', 16, '#fff', 2.6) + 'নতুন</a></div>' +
+      '<div class="dua-card"><b style="font-size:18px">' + h(d.title) + '</b>' +
+      (d.arabic ? '<div class="ar" lang="ar">' + h(d.arabic) + '</div>' : '') + (d.meaning ? '<div class="mean">' + h(d.meaning) + '</div>' : '') +
+      '<div class="counter-wrap"><button class="counter' + (n >= d.target ? ' done' : '') + '" id="cnt-btn" data-act="dua-tap" style="--p:' + pct + '" aria-label="গণনা করুন">' +
+      '<span><b id="cnt-n">' + bn(n) + '</b><small>আজ / লক্ষ্য <span id="cnt-t" style="display:inline">' + bn(d.target) + '</span></small></span></button>' +
+      '<div style="display:flex;gap:8px"><button class="btn outline small" data-act="dua-undo">− ১ কমান</button><button class="btn outline small" data-act="dua-reset">আজকের গণনা শূন্য</button></div></div>' +
+      '<div class="sec-h"><h2>শেষ ৭ দিন</h2></div><div class="days7" id="days7">' + daysHtml(d) + '</div></div>' +
+      '<div class="card"><h3>রিমাইন্ডার</h3><p>' + (d.times && d.times.length ? 'প্রতিদিন ' + d.times.map(function (t) { return bn(t); }).join(', ') + ' টায় গুগল ক্যালেন্ডারে নোটিফিকেশন আসবে।' : 'কোনো সময় ঠিক করা নেই।') + '</p>' +
+      '<div style="display:flex;gap:8px"><a class="btn outline small" href="#/dua/edit/' + h(d.id) + '">' + ic('edit', 16, 'currentColor', 2.2) + ' সম্পাদনা</a>' +
+      '<button class="btn danger small" data-act="del-dua" data-arg="' + h(d.id) + '">মুছুন</button></div></div></div>' + nav('dua');
+    render(html);
+  }
+  function duaSetCount(id, delta, absolute) {
+    var d = S.getDua(id); if (!d) return;
+    var today = U.todayISO(), before = S.duaCount(d, today);
+    var n = absolute != null ? S.setDuaCount(id, today, absolute) : S.bumpDua(id, today, delta);
+    var btn = document.getElementById('cnt-btn');
+    if (btn) { btn.style.setProperty('--p', duaPercent(d, n)); btn.classList.toggle('done', n >= d.target); }
+    var el = document.getElementById('cnt-n'); if (el) el.textContent = bn(n);
+    var dy = document.getElementById('days7'); if (dy) dy.innerHTML = daysHtml(d);
+    if (delta > 0 && navigator.vibrate) { try { navigator.vibrate(n === d.target ? [30, 40, 60] : 12); } catch (e) { /* ignore */ } }
+    if (delta > 0 && before < d.target && n >= d.target) toast('আলহামদুলিল্লাহ, আজকের লক্ষ্য পূর্ণ হয়েছে');
+    scheduleSync();
+  }
+
+  function collectDua() {
+    ['title', 'arabic', 'meaning', 'target'].forEach(function (k) {
+      var e = document.getElementById('d-' + k); if (e) draft[k] = e.value;
+    });
+    var ts = document.querySelectorAll('.t-in');
+    if (ts.length) draft.times = Array.prototype.map.call(ts, function (x) { return x.value; });
+  }
+  function vDuaForm(id, sample) {
+    var d = id ? S.getDua(id) : null;
+    if (id && !d) { go('#/dua'); return; }
+    if (!draft) {
+      draft = d ? { title: d.title, arabic: d.arabic, meaning: d.meaning, target: String(d.target), times: d.times.slice() }
+        : sample ? JSON.parse(JSON.stringify(SAMPLE_DUA)) : { title: '', arabic: '', meaning: '', target: '100', times: ['21:00'] };
+    }
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/dua" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (d ? 'দোয়া সম্পাদনা' : 'নতুন দোয়া') + '</h1></div>';
+    if (sample && !d) html += '<div class="note-box">এটি প্রচলিত একটি নমুনা। ব্যবহারের আগে নিজের বই বা আলেমের কাছ থেকে মিলিয়ে নিন, দরকারে বদলে ফেলুন।</div>';
+    html += '<div class="field"><label for="d-title">দোয়ার নাম</label><input type="text" id="d-title" value="' + h(draft.title) + '" autocomplete="off">' + errHtml('title') + '</div>' +
+      '<div class="field"><label for="d-arabic">আরবি / মূল পাঠ</label><textarea id="d-arabic" rows="3" dir="auto">' + h(draft.arabic) + '</textarea></div>' +
+      '<div class="field"><label for="d-meaning">বাংলা অর্থ</label><textarea id="d-meaning" rows="3">' + h(draft.meaning) + '</textarea></div>' +
+      '<div class="field"><label for="d-target">দৈনিক লক্ষ্য (কতবার পড়বেন)</label><input type="text" inputmode="numeric" id="d-target" value="' + h(draft.target) + '" autocomplete="off">' + errHtml('target') + '</div>' +
+      '<div class="field"><span class="lbl">রিমাইন্ডারের সময় (প্রতিদিন)</span>' +
+      draft.times.map(function (t, i) {
+        return '<div class="timebox"><input type="time" class="t-in" value="' + h(t) + '"><button data-act="dua-deltime" data-arg="' + i + '" aria-label="সময় মুছুন">' + ic('x', 18, 'currentColor', 2.4) + '</button></div>';
+      }).join('') + (draft.times.length < 5 ? '<button class="linkbtn" data-act="dua-addtime">＋ আরেকটা সময় যোগ করুন</button>' : '') +
+      '<span class="hint">রিমাইন্ডার গুগল ক্যালেন্ডারের মাধ্যমে আসে, তাই গুগল লগিন লাগবে।</span></div>' +
+      '</div><div class="bottom-bar"><button class="btn" data-act="save-dua" data-arg="' + (d ? h(d.id) : '') + '">সেভ করুন</button></div>';
+    render(html);
+  }
+  function saveDua(id) {
+    collectDua();
+    var errors = {}, t = parseInt(U.fromBn(draft.target), 10);
+    if (!draft.title.trim()) errors.title = 'দোয়ার নাম লিখুন';
+    if (isNaN(t) || t < 1 || t > 100000) errors.target = 'সঠিক সংখ্যা লিখুন (১ বা তার বেশি)';
+    if (Object.keys(errors).length) { draft.errors = errors; vDuaForm(id); return; }
+    var data = { title: draft.title.trim(), arabic: draft.arabic.trim(), meaning: draft.meaning.trim(), target: t, times: draft.times.filter(Boolean) };
+    var d = id ? S.updateDua(id, data) : S.createDua(data);
+    localStorage.setItem('rin_dua', d.id);
+    afterChange(); toast('সেভ হয়েছে'); go('#/dua');
   }
 
   /* ---------- সিঙ্ক চালু রাখা ---------- */
@@ -467,6 +698,39 @@
       var id = t.getAttribute('data-arg');
       sheet('এই ঋণের পুরো হিসাব মুছবেন?', 'লেনদেন, চুক্তিপত্র ও ক্যালেন্ডারের রিমাইন্ডার সব যাবে।', 'মুছুন', function () { S.deleteLoan(id); afterChange(); go('#/'); toast('মুছে ফেলা হয়েছে'); }, true);
     },
+    'fin-kind': function (t) { fin.kind = t.getAttribute('data-arg'); fin.anchor = U.todayISO(); fin.allCats = false; fin.allList = false; vMoney(); },
+    'fin-prev': function () { fin.anchor = S.shiftAnchor(fin.kind, fin.anchor, -1); vMoney(); },
+    'fin-next': function () { fin.anchor = S.shiftAnchor(fin.kind, fin.anchor, 1); vMoney(); },
+    'fin-cv': function (t) { fin.cv = t.getAttribute('data-arg'); fin.allCats = false; vMoney(); },
+    'fin-allcats': function () { fin.allCats = !fin.allCats; vMoney(); },
+    'fin-alllist': function () { fin.allList = !fin.allList; vMoney(); },
+    'report-pdf': function () { reportPdf(); },
+    'entry-type': function (t) { collectEntry(); draft.type = t.getAttribute('data-arg'); draft.cat = ''; draft.newCat = false; vEntry(); },
+    'entry-addcat': function () {
+      var el = document.getElementById('e-newcat'), name = el ? el.value : '';
+      collectEntry();
+      var added = S.addCat(draft.type, name);
+      if (!added) { draft.errors = { cat: 'খাতের নাম লিখুন (ঋণ শোধ নামটি ব্যবহার করা যাবে না)' }; vEntry(); return; }
+      draft.cat = added; draft.newCat = false; draft.errors = null; afterChange(); vEntry();
+    },
+    'save-entry': function () { saveEntry(); },
+    'del-entry': function (t) {
+      var id = t.getAttribute('data-arg');
+      sheet('লেনদেনটি মুছবেন?', 'মুছলে আয়-ব্যয়ের হিসাব আবার মিলিয়ে নেওয়া হবে।', 'মুছুন', function () { S.deleteEntry(id); afterChange(); toast('মুছে ফেলা হয়েছে'); }, true);
+    },
+    'dua-tap': function () { duaSetCount(localStorage.getItem('rin_dua'), 1); },
+    'dua-undo': function () { duaSetCount(localStorage.getItem('rin_dua'), -1); },
+    'dua-reset': function () {
+      var id = localStorage.getItem('rin_dua');
+      sheet('আজকের গণনা শূন্য করবেন?', 'আজকের গণনা ০ হয়ে যাবে।', 'শূন্য করুন', function () { duaSetCount(id, 0, 0); }, true);
+    },
+    'dua-addtime': function () { collectDua(); draft.times.push('12:00'); vDuaForm(current.p[2] && current.p[1] === 'edit' ? current.p[2] : null, current.p[2] === 'sample'); },
+    'dua-deltime': function (t) { collectDua(); draft.times.splice(+t.getAttribute('data-arg'), 1); vDuaForm(current.p[1] === 'edit' ? current.p[2] : null, current.p[2] === 'sample'); },
+    'save-dua': function (t) { saveDua(t.getAttribute('data-arg') || null); },
+    'del-dua': function (t) {
+      var id = t.getAttribute('data-arg');
+      sheet('এই দোয়া মুছবেন?', 'গণনার হিসাব ও ক্যালেন্ডারের রিমাইন্ডার সব যাবে।', 'মুছুন', function () { S.deleteDua(id); afterChange(); toast('মুছে ফেলা হয়েছে'); }, true);
+    },
     'save-contract': function (t) { saveContract(t.getAttribute('data-arg')); },
     'pdf-dl': function (t) { pdfAction(t.getAttribute('data-arg'), 'download'); },
     'pdf-share': function (t) { pdfAction(t.getAttribute('data-arg'), 'share'); },
@@ -501,6 +765,10 @@
     if (e.target.id === 'f-amount' && current.name === 'tx') updateTxPreview();
   });
   root.addEventListener('change', function (e) {
+    var id = e.target.id;
+    if (id === 'r-from' || id === 'r-to') { fin[id === 'r-from' ? 'from' : 'to'] = e.target.value; vMoney(); return; }
+    if (id === 'e-cat' && e.target.value === '__new') { collectEntry(); draft.newCat = true; vEntry(); return; }
+    if (id === 'dua-sel') { localStorage.setItem('rin_dua', e.target.value); vDua(); return; }
     if (e.target.id !== 'restore-file' || !e.target.files || !e.target.files[0]) return;
     var rd = new FileReader();
     rd.onload = function () {
@@ -524,14 +792,17 @@
     else if (current.name === 'loan') vLoan(p[1]);
     else if (current.name === 'tx') vTx(p[1], p[2] === 'add' ? 'add' : 'pay');
     else if (current.name === 'contract') { if (p[2] === 'edit') vContractForm(p[1]); else vContractView(p[1]); }
+    else if (current.name === 'money') vMoney();
+    else if (current.name === 'entry') vEntry();
+    else if (current.name === 'dua') { if (p[1] === 'new') vDuaForm(null, p[2] === 'sample'); else if (p[1] === 'edit') vDuaForm(p[2]); else vDua(); }
     else if (current.name === 'settings') vSettings();
     else { current.name = 'home'; vHome(); }
   }
 
   window.addEventListener('hashchange', route);
-  S.onChange(function () { if (['home', 'loan', 'settings'].indexOf(current.name) >= 0) route(); });
+  S.onChange(function () { if (['home', 'loan', 'settings', 'money'].indexOf(current.name) >= 0) route(); });
   G.onStatus(function () {
-    if (current.name === 'home') refreshChip();
+    if (current.name === 'home' || current.name === 'money' || current.name === 'dua') refreshChip();
     else if (current.name === 'settings') vSettings();
     else if (current.name === 'contract' && current.p[2] !== 'edit') vContractView(current.p[1]);
   });

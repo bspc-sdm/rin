@@ -1,5 +1,5 @@
 /* অফলাইনে অ্যাপ খুলতে সাহায্য করে। ডাটা এখানে নয়, ফোনের লোকাল স্টোরেজে থাকে। */
-const CACHE = 'rin-v1';
+const CACHE = 'rin-v2';
 const SHELL = ['./', 'index.html', 'config.js', 'style.css', 'util.js', 'store.js', 'contract.js',
   'google.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 

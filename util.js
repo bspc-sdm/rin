@@ -154,7 +154,7 @@
     words: words, takaInWords: takaInWords, MONTHS: MONTHS,
     todayISO: todayISO, formatDate: formatDate, formatDateShort: formatDateShort,
     daysBetween: daysBetween, addMonths: addMonths, addDays: addDays, termText: termText,
-    escapeHtml: escapeHtml, newId: newId
+    escapeHtml: escapeHtml, newId: newId, parseISO: parseISO
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RinUtil = api;

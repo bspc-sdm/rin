@@ -4,11 +4,25 @@
   var U = (typeof module !== 'undefined' && module.exports) ? require('./util.js') : root.RinUtil;
 
   var KEY = 'rin_data_v1';
+  var DEFAULT_CATS = {
+    expense: ['খাবার', 'যাতায়াত', 'বাসা ভাড়া', 'বিল', 'চিকিৎসা', 'শিক্ষা', 'কেনাকাটা', 'দান', 'অন্যান্য'],
+    income: ['বেতন', 'ব্যবসা', 'উপহার', 'অন্যান্য']
+  };
+  var LOAN_CAT = 'ঋণ শোধ';
+
   var storage = null;
   var state = emptyState();
   var listeners = [];
 
-  function emptyState() { return { v: 1, loans: [], updatedAt: 0 }; }
+  function emptyState() {
+    return { v: 2, loans: [], duas: [], entries: [], cats: { income: DEFAULT_CATS.income.slice(), expense: DEFAULT_CATS.expense.slice() }, updatedAt: 0 };
+  }
+
+  function unionNames(a, b) {
+    var seen = {}, out = [];
+    (a || []).concat(b || []).forEach(function (n) { if (n && !seen[n]) { seen[n] = 1; out.push(n); } });
+    return out;
+  }
 
   function setStorage(s) { storage = s; }
   function onChange(fn) { listeners.push(fn); }
@@ -22,6 +36,12 @@
         return l;
       });
     }
+    out.duas = (s && Array.isArray(s.duas)) ? s.duas : [];
+    out.entries = (s && Array.isArray(s.entries)) ? s.entries : [];
+    out.cats = {
+      income: unionNames(DEFAULT_CATS.income, s && s.cats && s.cats.income),
+      expense: unionNames(DEFAULT_CATS.expense, s && s.cats && s.cats.expense)
+    };
     out.updatedAt = (s && s.updatedAt) || 0;
     return out;
   }
@@ -168,6 +188,31 @@
     return out;
   }
 
+  function mergeById(a, b, fn) {
+    var map = {};
+    (a || []).forEach(function (x) { map[x.id] = x; });
+    (b || []).forEach(function (r) {
+      var cur = map[r.id];
+      if (!cur) { map[r.id] = r; return; }
+      if (fn) map[r.id] = fn(cur, r);
+      else map[r.id] = (r.updatedAt || 0) > (cur.updatedAt || 0) ? r : cur;
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+
+  function mergeDua(a, b) {
+    var newer = (a.updatedAt || 0) >= (b.updatedAt || 0) ? a : b;
+    var out = JSON.parse(JSON.stringify(newer));
+    var counts = {};
+    [a.counts || {}, b.counts || {}].forEach(function (c) {
+      Object.keys(c).forEach(function (d) {
+        if (!counts[d] || (c[d].at || 0) > (counts[d].at || 0)) counts[d] = c[d];
+      });
+    });
+    out.counts = counts;
+    return out;
+  }
+
   function mergeStates(local, remote) {
     var map = {};
     (local.loans || []).forEach(function (l) { map[l.id] = l; });
@@ -176,6 +221,12 @@
     });
     var out = emptyState();
     out.loans = Object.keys(map).map(function (k) { return map[k]; });
+    out.duas = mergeById(local.duas, remote.duas, mergeDua);
+    out.entries = mergeById(local.entries, remote.entries, null);
+    out.cats = {
+      income: unionNames(local.cats && local.cats.income, remote.cats && remote.cats.income),
+      expense: unionNames(local.cats && local.cats.expense, remote.cats && remote.cats.expense)
+    };
     out.updatedAt = Math.max(local.updatedAt || 0, remote.updatedAt || 0);
     return normalize(out);
   }
@@ -186,12 +237,132 @@
     notify();
   }
 
+  /* ---------- দোয়া ---------- */
+  function liveDuas() { return state.duas.filter(function (d) { return !d.deleted; }); }
+  function getDua(id) {
+    for (var i = 0; i < state.duas.length; i++) if (state.duas[i].id === id && !state.duas[i].deleted) return state.duas[i];
+    return null;
+  }
+  function cleanTimes(t) {
+    var seen = {}, out = [];
+    (t || []).forEach(function (x) { if (/^\d{2}:\d{2}$/.test(x) && !seen[x]) { seen[x] = 1; out.push(x); } });
+    return out.sort();
+  }
+  function createDua(o) {
+    var now = Date.now();
+    var d = { id: U.newId(), title: o.title, arabic: o.arabic || '', meaning: o.meaning || '', target: o.target || 1,
+      times: cleanTimes(o.times), counts: {}, eventIds: [], createdAt: now, updatedAt: now, deleted: false, calDirty: true };
+    state.duas.push(d); save(); return d;
+  }
+  function updateDua(id, patch) {
+    var d = getDua(id); if (!d) return null;
+    Object.keys(patch).forEach(function (k) { d[k] = k === 'times' ? cleanTimes(patch[k]) : patch[k]; });
+    d.updatedAt = Date.now(); d.calDirty = true; save(); return d;
+  }
+  function deleteDua(id) {
+    var d = getDua(id); if (!d) return;
+    d.deleted = true; d.updatedAt = Date.now(); d.calDirty = true; save();
+  }
+  function duaCount(d, date) { return (d.counts && d.counts[date] && d.counts[date].n) || 0; }
+  function setDuaCount(id, date, n) {
+    var d = getDua(id); if (!d) return 0;
+    d.counts = d.counts || {};
+    var now = Date.now();
+    d.counts[date] = { n: Math.max(0, n), at: now };
+    d.updatedAt = now;
+    save(true);
+    return d.counts[date].n;
+  }
+  function bumpDua(id, date, delta) {
+    var d = getDua(id); if (!d) return 0;
+    return setDuaCount(id, date, duaCount(d, date) + delta);
+  }
+  function duaLastDays(d, today, n) {
+    var out = [];
+    for (var i = n - 1; i >= 0; i--) {
+      var day = U.addDays(today, -i);
+      out.push({ date: day, n: duaCount(d, day) });
+    }
+    return out;
+  }
+
+  /* ---------- আয়-ব্যয় ---------- */
+  function cats(type) { return state.cats[type] || []; }
+  function addCat(type, name) {
+    name = (name || '').trim();
+    if (!name || name === LOAN_CAT) return null;
+    var list = state.cats[type];
+    for (var i = 0; i < list.length; i++) if (list[i] === name) return name;
+    list.push(name); save(); return name;
+  }
+  function addEntry(o) {
+    var now = Date.now();
+    var e = { id: U.newId(), type: o.type, cat: o.cat, amount: o.amount, date: o.date, note: o.note || '', createdAt: now, updatedAt: now, deleted: false };
+    state.entries.push(e); save(); return e;
+  }
+  function deleteEntry(id) {
+    state.entries.forEach(function (e) { if (e.id === id) { e.deleted = true; e.updatedAt = Date.now(); } });
+    save();
+  }
+  /* সব এন্ট্রি: নিজের লেখা + ঋণ শোধ (আমি দেব-এর শোধ) স্বয়ংক্রিয় ব্যয় */
+  function allEntries() {
+    var out = state.entries.filter(function (e) { return !e.deleted; });
+    state.loans.forEach(function (l) {
+      if (l.deleted || l.dir !== 'taken') return;
+      liveTxs(l).forEach(function (t) {
+        if (t.kind === 'pay') out.push({ id: 'ln' + t.id, type: 'expense', cat: LOAN_CAT, amount: t.amount, date: t.date, note: l.name, derived: true, loanId: l.id, createdAt: t.createdAt || 0 });
+      });
+    });
+    return out;
+  }
+
+  function dow(iso) { var p = U.parseISO(iso); return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); }
+  function monthStart(iso) { var p = U.parseISO(iso); return p.y + '-' + (p.m < 10 ? '0' : '') + p.m + '-01'; }
+  function monthEnd(iso) { var p = U.parseISO(iso); var d = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate(); return p.y + '-' + (p.m < 10 ? '0' : '') + p.m + '-' + (d < 10 ? '0' : '') + d; }
+  /* সপ্তাহ শনিবার থেকে শুক্রবার */
+  function rangeFor(kind, anchor) {
+    var from, to, label, p = U.parseISO(anchor);
+    if (kind === 'day') { from = to = anchor; label = U.formatDate(anchor); }
+    else if (kind === 'week') {
+      from = U.addDays(anchor, -((dow(anchor) + 1) % 7)); to = U.addDays(from, 6);
+      label = U.formatDateShort(from) + ' – ' + U.formatDate(to);
+    } else if (kind === 'month') { from = monthStart(anchor); to = monthEnd(anchor); label = U.MONTHS[p.m - 1] + ' ' + U.toBn(p.y); }
+    else { from = p.y + '-01-01'; to = p.y + '-12-31'; label = U.toBn(p.y) + ' সাল'; }
+    return { from: from, to: to, label: label };
+  }
+  function shiftAnchor(kind, anchor, dir) {
+    if (kind === 'day') return U.addDays(anchor, dir);
+    if (kind === 'week') return U.addDays(anchor, 7 * dir);
+    if (kind === 'month') return U.addMonths(monthStart(anchor), dir);
+    return U.addMonths(monthStart(anchor), 12 * dir);
+  }
+  function groupCats(items, type) {
+    var m = {};
+    items.forEach(function (e) { if (e.type === type) m[e.cat] = (m[e.cat] || 0) + e.amount; });
+    return Object.keys(m).map(function (k) { return { name: k, total: m[k] }; })
+      .sort(function (a, b) { return b.total - a.total; });
+  }
+  function report(from, to) {
+    var items = allEntries().filter(function (e) { return e.date >= from && e.date <= to; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0); });
+    var inc = 0, exp = 0;
+    items.forEach(function (e) { if (e.type === 'income') inc += e.amount; else exp += e.amount; });
+    return { from: from, to: to, income: inc, expense: exp, balance: inc - exp, items: items,
+      inCats: groupCats(items, 'income'), exCats: groupCats(items, 'expense') };
+  }
+  /* মোট ব্যালেন্স: সব সময়ের আয় − ব্যয় */
+  function totalBalance() { return report('0000-01-01', '9999-12-31').balance; }
+
   var api = {
     setStorage: setStorage, onChange: onChange, load: load, save: save,
     getState: getState, replaceState: replaceState, balance: balance, liveTxs: liveTxs,
     getLoan: getLoan, liveLoans: liveLoans, createLoan: createLoan, updateLoan: updateLoan,
     addTx: addTx, deleteTx: deleteTx, deleteLoan: deleteLoan, status: status,
-    summary: summary, mergeStates: mergeStates, applyMerged: applyMerged
+    summary: summary, mergeStates: mergeStates, applyMerged: applyMerged,
+    liveDuas: liveDuas, getDua: getDua, createDua: createDua, updateDua: updateDua, deleteDua: deleteDua,
+    duaCount: duaCount, setDuaCount: setDuaCount, bumpDua: bumpDua, duaLastDays: duaLastDays,
+    cats: cats, addCat: addCat, addEntry: addEntry, deleteEntry: deleteEntry, allEntries: allEntries,
+    rangeFor: rangeFor, shiftAnchor: shiftAnchor, report: report, totalBalance: totalBalance, LOAN_CAT: LOAN_CAT
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RinStore = api;
