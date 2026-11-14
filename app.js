@@ -130,6 +130,7 @@
       '<div class="mini"><span>আগামী ৭ দিনে</span><b>' + U.formatTaka(sum.next7) + '</b></div></div></div>' +
       '<div class="seg c2" role="tablist"><button data-act="dir" data-arg="taken" class="' + (dir === 'taken' ? 'active' : '') + '">আমি দেব</button>' +
       '<button data-act="dir" data-arg="given" class="' + (dir === 'given' ? 'active' : '') + '">আমি পাব</button></div>' +
+      '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>পরিশোধের সূচি</b><small>মাসওয়ারি কত যাবে, এক নজরে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
       '<div class="sec-h"><h2>' + w.list + ' (' + bn(open.length) + ' জন)</h2><span>তারিখ অনুযায়ী</span></div>';
     if (!open.length) {
       html += '<div class="empty">' + (dir === 'taken' ? 'কোনো ঋণ বাকি নেই। নতুন ঋণ লিখতে নিচের বাটন চাপুন।' : 'কাউকে ঋণ দেওয়া নেই। দিলে নিচের বাটন চেপে লিখে রাখুন।') + '</div>';
@@ -143,7 +144,7 @@
 
   /* ---------- নতুন ঋণ / সম্পাদনা ---------- */
   function collectLoan() {
-    ['name', 'contact', 'amount', 'date', 'due'].forEach(function (k) {
+    ['name', 'contact', 'amount', 'date', 'due', 'n', 'first'].forEach(function (k) {
       var e = document.getElementById('f-' + k);
       if (e) draft[k] = e.value;
     });
@@ -156,8 +157,8 @@
     if (!draft) {
       var t = U.todayISO();
       draft = loan
-        ? { dir: loan.dir, name: loan.name, contact: loan.contact, due: loan.dueDate, mode: loan.mode, remind: loan.remind }
-        : { dir: ui.dir, name: '', contact: '', amount: '', date: t, due: U.addMonths(t, 1), mode: 'full', remind: 1, contract: true };
+        ? { dir: loan.dir, name: loan.name, contact: loan.contact, due: loan.dueDate, mode: loan.mode, remind: loan.remind, n: loan.plan ? String(loan.plan.n) : '', first: loan.plan ? loan.plan.first : U.addMonths(t, 1) }
+        : { dir: ui.dir, name: '', contact: '', amount: '', date: t, due: U.addMonths(t, 1), mode: 'full', remind: 1, contract: true, n: '', first: U.addMonths(t, 1) };
     }
     var w = dirWords(draft.dir);
     var html = '<div class="screen form"><div class="title-row"><a class="back" href="' + (loan ? '#/loan/' + h(loan.id) : '#/') + '" aria-label="ফিরে যান">' + ic('back') + '</a>' +
@@ -178,6 +179,8 @@
     html += errHtml('due') +
       '<div class="field"><span class="lbl">শোধের ধরন</span><div class="seg c2"><button data-act="form-mode" data-arg="full" class="' + (draft.mode === 'full' ? 'active' : '') + '">একবারে পুরো</button>' +
       '<button data-act="form-mode" data-arg="partial" class="' + (draft.mode === 'partial' ? 'active' : '') + '">কিস্তিতে (আংশিক)</button></div></div>' +
+      (draft.mode === 'partial' ? '<div class="row2"><div class="field"><label for="f-n">কত মাসে শোধ (কিস্তি)</label><input type="text" inputmode="numeric" id="f-n" value="' + h(draft.n) + '" placeholder="যেমন ৩" autocomplete="off"></div>' +
+        '<div class="field"><label for="f-first">প্রথম কিস্তির তারিখ</label><input type="date" id="f-first" value="' + h(draft.first) + '"></div></div>' + errHtml('n') + '<p class="hint">সমান কিস্তিতে ভাগ হবে; সূচির পাতায় মাসওয়ারি দেখা যাবে।</p>' : '') +
       '<div class="field"><span class="lbl">রিমাইন্ডার (গুগল ক্যালেন্ডারে)</span><div class="pills">' +
       [[1, '১ দিন আগে'], [3, '৩ দিন আগে'], [0, 'শোধের দিন']].map(function (r) {
         return '<button class="pill ' + (draft.remind === r[0] ? 'active' : '') + '" data-act="form-remind" data-arg="' + r[0] + '">' + r[1] + '</button>';
@@ -202,12 +205,19 @@
       if (draft.due && draft.date && draft.due < draft.date) errors.due = 'শোধের তারিখ ঋণের তারিখের আগে হতে পারে না';
       if (!draft.date) errors.date = 'ঋণের তারিখ দিন';
     }
+    var pn = parseInt(U.fromBn(String(draft.n || '')), 10), wantPlan = draft.mode === 'partial' && pn >= 2;
+    if (draft.mode === 'partial' && String(draft.n || '').trim() && !(pn >= 1 && pn <= 60)) errors.n = 'মাসের সংখ্যা ১ থেকে ৬০-এর মধ্যে দিন';
+    if (wantPlan && !draft.first) errors.n = 'প্রথম কিস্তির তারিখ দিন';
     if (Object.keys(errors).length) { draft.errors = errors; vLoanForm(editId); window.scrollTo(0, 0); return; }
     if (editId) {
       S.updateLoan(editId, { name: draft.name.trim(), contact: draft.contact.trim(), dueDate: draft.due, mode: draft.mode, remind: draft.remind });
+      var cur = S.getLoan(editId);
+      if (wantPlan) { if (!cur.plan || cur.plan.n !== pn || cur.plan.first !== draft.first) S.setPlan(editId, pn, draft.first); }
+      else if (cur.plan) S.setPlan(editId, 0);
       afterChange(); toast('বদল সেভ হয়েছে'); go('#/loan/' + editId); return;
     }
     var loan = S.createLoan({ name: draft.name.trim(), contact: draft.contact.trim(), dir: draft.dir, amount: amount, date: draft.date, dueDate: draft.due, mode: draft.mode, remind: draft.remind });
+    if (wantPlan) S.setPlan(loan.id, pn, draft.first);
     ui.dir = draft.dir; localStorage.setItem('rin_dir', ui.dir);
     var wantContract = draft.contract;
     afterChange();
@@ -240,6 +250,11 @@
     html += l.contract
       ? '<a class="linkcard" href="#/contract/' + h(l.id) + '">' + ic('file', 24, '#1F5C4A', 2) + '<div class="mid"><b>ঋণ চুক্তিপত্র</b><small>' + U.formatDate(l.contract.date) + (l.contract.w1 || l.contract.w2 ? ' • সাক্ষী আছে' : '') + '</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>'
       : '<a class="linkcard" href="#/contract/' + h(l.id) + '/edit">' + ic('file', 24, '#1F5C4A', 2) + '<div class="mid"><b>চুক্তিপত্র লিখুন</b><small>তারিখ, টাকা, মেয়াদ ও সাক্ষীসহ</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
+    if (l.plan && bal > 0) {
+      var ri = S.remainingInstallments(l), nx = ri[0];
+      html += '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>' + bn(l.plan.n) + ' মাসের কিস্তি' + (nx ? ' • পরের কিস্তি ' + U.formatTaka(nx.amount) : '') + '</b><small>' + (nx ? U.formatDate(nx.date) + ' • ' : '') + 'বাকি ' + bn(ri.length) + 'টি কিস্তি</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
+    }
+    html += '<a class="linkcard" href="#/log/' + h(l.id) + '">' + ic('edit', 24, '#1F5C4A', 2) + '<div class="mid"><b>এডিট হিস্টোরি</b><small>' + bn((l.log || []).length) + 'টি পরিবর্তন লেখা আছে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     html += '<div class="sec-h"><h2>লেনদেনের ইতিহাস</h2></div>';
     html += txs.map(function (t) {
       var add = t.kind === 'add';
@@ -497,6 +512,7 @@
       if (rep.items.length > 10) html += '<button class="linkbtn" data-act="fin-alllist">' + (fin.allList ? 'কম দেখুন' : 'সব ' + bn(rep.items.length) + 'টি দেখুন') + '</button>';
     }
     html += '<button class="btn outline small" style="margin-top:6px" data-act="report-pdf">' + ic('download', 18, 'currentColor', 2.2) + 'এই রিপোর্ট পিডিএফ</button>' +
+      '<a class="linkcard" href="#/forecast">' + ic('chart', 24, '#1F5C4A', 2) + '<div class="mid"><b>আগামী মাসের পূর্বাভাস</b><small>ডিফল্ট আয়-খরচ ও ঋণ শোধসহ</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
       '</div><div class="bottom-bar"><a class="btn" href="#/entry">' + ic('plus', 18, '#fff', 2.6) + ' নতুন আয় / ব্যয়</a></div>' + nav('money');
     render(html);
   }
@@ -573,9 +589,58 @@
   var SAMPLE_DUA = {
     title: 'ঋণ পরিশোধের দোয়া',
     arabic: 'اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ',
+    translit: 'আল্লাহুম্মাকফিনী বিহালালিকা ‘আন হারামিকা, ওয়া আগনিনী বিফাদলিকা ‘আম্মান সিওয়াক।',
     meaning: 'হে আল্লাহ, আপনি আপনার হালাল দিয়ে আমাকে হারাম থেকে যথেষ্ট করে দিন এবং আপনার অনুগ্রহে আপনি ছাড়া অন্য সবার থেকে আমাকে অমুখাপেক্ষী করুন।',
     target: '100', times: ['05:30', '21:00']
   };
+  /* সবার জন্য বিল্ট-ইন দোয়া লাইব্রেরি (নতুন দোয়া যোগ করতে এই তালিকায় লিখলেই সবার অ্যাপে আসবে) */
+  var DUA_LIB = [
+    { title: 'ঋণ পরিশোধের দোয়া', src: 'জামে তিরমিযী', target: 100,
+      arabic: 'اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ',
+      translit: 'আল্লাহুম্মাকফিনী বিহালালিকা ‘আন হারামিকা, ওয়া আগনিনী বিফাদলিকা ‘আম্মান সিওয়াক।',
+      meaning: 'হে আল্লাহ, আপনি আপনার হালাল দিয়ে আমাকে হারাম থেকে যথেষ্ট করে দিন এবং আপনার অনুগ্রহে আপনি ছাড়া অন্য সবার থেকে আমাকে অমুখাপেক্ষী করুন।' },
+    { title: 'দুশ্চিন্তা ও ঋণের বোঝা থেকে আশ্রয়', src: 'সহীহ বুখারী', target: 33,
+      arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ، وَالْعَجْزِ وَالْكَسَلِ، وَالْبُخْلِ وَالْجُبْنِ، وَضَلَعِ الدَّيْنِ وَغَلَبَةِ الرِّجَالِ',
+      translit: 'আল্লাহুম্মা ইন্নী আঊযুবিকা মিনাল হাম্মি ওয়াল হাযানি, ওয়াল ‘আজযি ওয়াল কাসালি, ওয়াল বুখলি ওয়াল জুবনি, ওয়া দালা‘ইদ দাইনি ওয়া গালাবাতির রিজাল।',
+      meaning: 'হে আল্লাহ, আমি আপনার কাছে আশ্রয় চাই দুশ্চিন্তা ও দুঃখ থেকে, অক্ষমতা ও অলসতা থেকে, কৃপণতা ও ভীরুতা থেকে, ঋণের বোঝা ও মানুষের প্রাধান্য থেকে।' },
+    { title: 'দুনিয়া ও আখিরাতের কল্যাণের দোয়া', src: 'সূরা বাকারা ২:২০১', target: 11,
+      arabic: 'رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الْآخِرَةِ حَسَنَةً وَقِنَا عَذَابَ النَّارِ',
+      translit: 'রাব্বানা আতিনা ফিদ-দুনইয়া হাসানাতাঁও ওয়া ফিল-আখিরাতি হাসানাতাঁও ওয়া কিনা ‘আযাবান-নার।',
+      meaning: 'হে আমাদের রব, আমাদের দুনিয়াতে কল্যাণ দিন, আখিরাতেও কল্যাণ দিন এবং আমাদের জাহান্নামের আগুন থেকে রক্ষা করুন।' },
+    { title: 'হাসবুনাল্লাহ', src: 'সূরা আলে ইমরান ৩:১৭৩', target: 100,
+      arabic: 'حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ',
+      translit: 'হাসবুনাল্লাহু ওয়া নি‘মাল ওয়াকীল।',
+      meaning: 'আল্লাহই আমাদের জন্য যথেষ্ট এবং তিনিই উত্তম কর্মবিধায়ক।' },
+    { title: 'লা হাওলা ওয়ালা কুওয়াতা', src: 'সহীহ বুখারী', target: 100,
+      arabic: 'لَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ',
+      translit: 'লা হাওলা ওয়ালা কুওয়াতা ইল্লা বিল্লাহ।',
+      meaning: 'আল্লাহর সাহায্য ছাড়া গুনাহ থেকে বাঁচার বা ভালো কাজ করার কোনো শক্তি নেই।' },
+    { title: 'তাসবীহ', src: 'সহীহ বুখারী', target: 100,
+      arabic: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ',
+      translit: 'সুবহানাল্লাহি ওয়া বিহামদিহী।',
+      meaning: 'আল্লাহ পবিত্র, আমি তাঁর প্রশংসা করি।' },
+    { title: 'ইস্তিগফার', src: 'হাদীসে বর্ণিত', target: 100,
+      arabic: 'أَسْتَغْفِرُ اللَّهَ',
+      translit: 'আস্তাগফিরুল্লাহ।',
+      meaning: 'আমি আল্লাহর কাছে ক্ষমা চাই।' },
+    { title: 'দরূদ', src: 'হাদীসে বর্ণিত', target: 100,
+      arabic: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ',
+      translit: 'আল্লাহুম্মা সাল্লি ওয়া সাল্লিম ‘আলা নাবিয়্যিনা মুহাম্মাদ।',
+      meaning: 'হে আল্লাহ, আমাদের নবী মুহাম্মাদ (সা.)-এর উপর রহমত ও শান্তি বর্ষণ করুন।' }
+  ];
+  function vDuaLib() {
+    var have = {};
+    S.liveDuas().forEach(function (d) { have[d.title] = 1; });
+    var html = '<div class="screen"><div class="title-row"><a class="back" href="#/dua" aria-label="ফিরে যান">' + ic('back') + '</a><h1>দোয়া লাইব্রেরি</h1></div>' +
+      '<div class="note-box">পছন্দের দোয়া এক চাপে নিজের তালিকায় যোগ করুন, তারপর লক্ষ্য ও রিমাইন্ডারের সময় বদলে নিতে পারবেন। ব্যবহারের আগে নির্ভরযোগ্য বই বা আলেমের কাছ থেকে মিলিয়ে নেওয়া ভালো।</div>';
+    DUA_LIB.forEach(function (d, i) {
+      html += '<div class="dua-card"><b style="font-size:17px">' + h(d.title) + '</b><div class="ar" lang="ar">' + h(d.arabic) + '</div>' +
+        '<div class="tr">' + h(d.translit) + '</div><div class="mean">' + h(d.meaning) + '</div><small style="color:#5B635E">সূত্র: ' + h(d.src) + ' • প্রস্তাবিত লক্ষ্য ' + bn(d.target) + ' বার</small>' +
+        (have[d.title] ? '<div class="chip t-green" style="align-self:flex-start">যোগ করা আছে</div>'
+          : '<button class="btn small" data-act="dua-addlib" data-arg="' + i + '">আমার তালিকায় যোগ করুন</button>') + '</div>';
+    });
+    render(html + '</div>' + nav('dua'));
+  }
   function duaPercent(d, n) { return Math.min(100, Math.round(n * 100 / Math.max(1, d.target))); }
   function daysHtml(d) {
     var max = Math.max(d.target, 1);
@@ -588,8 +653,8 @@
     var list = S.liveDuas(), today = U.todayISO();
     var html = '<div class="screen"><div class="top"><div><span class="sub">প্রতিদিনের আমল</span><h1>দোয়া</h1></div>' + chipHtml() + '</div>';
     if (!list.length) {
-      html += '<div class="empty">কোনো দোয়া যোগ করা নেই। নিজের দোয়া লিখতে পারেন, অথবা নিচের নমুনা দিয়ে শুরু করুন।</div>' +
-        '<a class="btn" href="#/dua/new">নতুন দোয়া যোগ করুন</a><a class="btn outline" href="#/dua/new/sample">ঋণ পরিশোধের দোয়া দিয়ে শুরু</a></div>' + nav('dua');
+      html += '<div class="empty">কোনো দোয়া যোগ করা নেই। লাইব্রেরি থেকে বেছে নিন, অথবা নিজের দোয়া লিখুন।</div>' +
+        '<a class="btn" href="#/dua/lib">দোয়া লাইব্রেরি থেকে বেছে নিন</a><a class="btn outline" href="#/dua/new">নিজের দোয়া লিখুন</a></div>' + nav('dua');
       render(html); return;
     }
     var sel = localStorage.getItem('rin_dua'), d = S.getDua(sel) || list[0];
@@ -597,9 +662,9 @@
     var n = S.duaCount(d, today), pct = duaPercent(d, n);
     html += '<div class="duasel"><select id="dua-sel" aria-label="দোয়া বাছুন">' + list.map(function (x) {
       return '<option value="' + h(x.id) + '"' + (x.id === d.id ? ' selected' : '') + '>' + h(x.title) + '</option>';
-    }).join('') + '</select><a class="btn small" href="#/dua/new">' + ic('plus', 16, '#fff', 2.6) + 'নতুন</a></div>' +
+    }).join('') + '</select><a class="btn small" href="#/dua/lib">' + ic('plus', 16, '#fff', 2.6) + 'যোগ</a></div>' +
       '<div class="dua-card"><b style="font-size:18px">' + h(d.title) + '</b>' +
-      (d.arabic ? '<div class="ar" lang="ar">' + h(d.arabic) + '</div>' : '') + (d.meaning ? '<div class="mean">' + h(d.meaning) + '</div>' : '') +
+      (d.arabic ? '<div class="ar" lang="ar">' + h(d.arabic) + '</div>' : '') + (d.translit ? '<div class="tr">' + h(d.translit) + '</div>' : '') + (d.meaning ? '<div class="mean">' + h(d.meaning) + '</div>' : '') +
       '<div class="counter-wrap"><button class="counter' + (n >= d.target ? ' done' : '') + '" id="cnt-btn" data-act="dua-tap" style="--p:' + pct + '" aria-label="গণনা করুন">' +
       '<span><b id="cnt-n">' + bn(n) + '</b><small>আজ / লক্ষ্য <span id="cnt-t" style="display:inline">' + bn(d.target) + '</span></small></span></button>' +
       '<div style="display:flex;gap:8px"><button class="btn outline small" data-act="dua-undo">− ১ কমান</button><button class="btn outline small" data-act="dua-reset">আজকের গণনা শূন্য</button></div></div>' +
@@ -623,7 +688,7 @@
   }
 
   function collectDua() {
-    ['title', 'arabic', 'meaning', 'target'].forEach(function (k) {
+    ['title', 'arabic', 'translit', 'meaning', 'target'].forEach(function (k) {
       var e = document.getElementById('d-' + k); if (e) draft[k] = e.value;
     });
     var ts = document.querySelectorAll('.t-in');
@@ -633,13 +698,14 @@
     var d = id ? S.getDua(id) : null;
     if (id && !d) { go('#/dua'); return; }
     if (!draft) {
-      draft = d ? { title: d.title, arabic: d.arabic, meaning: d.meaning, target: String(d.target), times: d.times.slice() }
-        : sample ? JSON.parse(JSON.stringify(SAMPLE_DUA)) : { title: '', arabic: '', meaning: '', target: '100', times: ['21:00'] };
+      draft = d ? { title: d.title, arabic: d.arabic, translit: d.translit || '', meaning: d.meaning, target: String(d.target), times: d.times.slice() }
+        : sample ? JSON.parse(JSON.stringify(SAMPLE_DUA)) : { title: '', arabic: '', translit: '', meaning: '', target: '100', times: ['21:00'] };
     }
     var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/dua" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (d ? 'দোয়া সম্পাদনা' : 'নতুন দোয়া') + '</h1></div>';
     if (sample && !d) html += '<div class="note-box">এটি প্রচলিত একটি নমুনা। ব্যবহারের আগে নিজের বই বা আলেমের কাছ থেকে মিলিয়ে নিন, দরকারে বদলে ফেলুন।</div>';
     html += '<div class="field"><label for="d-title">দোয়ার নাম</label><input type="text" id="d-title" value="' + h(draft.title) + '" autocomplete="off">' + errHtml('title') + '</div>' +
       '<div class="field"><label for="d-arabic">আরবি / মূল পাঠ</label><textarea id="d-arabic" rows="3" dir="auto">' + h(draft.arabic) + '</textarea></div>' +
+      '<div class="field"><label for="d-translit">বাংলা উচ্চারণ</label><textarea id="d-translit" rows="2">' + h(draft.translit || '') + '</textarea></div>' +
       '<div class="field"><label for="d-meaning">বাংলা অর্থ</label><textarea id="d-meaning" rows="3">' + h(draft.meaning) + '</textarea></div>' +
       '<div class="field"><label for="d-target">দৈনিক লক্ষ্য (কতবার পড়বেন)</label><input type="text" inputmode="numeric" id="d-target" value="' + h(draft.target) + '" autocomplete="off">' + errHtml('target') + '</div>' +
       '<div class="field"><span class="lbl">রিমাইন্ডারের সময় (প্রতিদিন)</span>' +
@@ -656,10 +722,119 @@
     if (!draft.title.trim()) errors.title = 'দোয়ার নাম লিখুন';
     if (isNaN(t) || t < 1 || t > 100000) errors.target = 'সঠিক সংখ্যা লিখুন (১ বা তার বেশি)';
     if (Object.keys(errors).length) { draft.errors = errors; vDuaForm(id); return; }
-    var data = { title: draft.title.trim(), arabic: draft.arabic.trim(), meaning: draft.meaning.trim(), target: t, times: draft.times.filter(Boolean) };
+    var data = { title: draft.title.trim(), arabic: draft.arabic.trim(), translit: (draft.translit || '').trim(), meaning: draft.meaning.trim(), target: t, times: draft.times.filter(Boolean) };
     var d = id ? S.updateDua(id, data) : S.createDua(data);
     localStorage.setItem('rin_dua', d.id);
     afterChange(); toast('সেভ হয়েছে'); go('#/dua');
+  }
+
+
+  /* ---------- পরিশোধের সূচি ---------- */
+  function monthLabel(key) { var p = key.split('-'); return U.MONTHS[+p[1] - 1] + ' ' + bn(p[0]); }
+  function monthName(key) { return U.MONTHS[+key.split('-')[1] - 1]; }
+  function vSchedule() {
+    var today = U.todayISO(), dir = ui.dir, cur = today.slice(0, 7), next = U.addMonths(cur + '-01', 1).slice(0, 7);
+    var s = S.schedule(dir, today), taken = dir === 'taken';
+    var nm = S.monthTotal(dir, next, today).total;
+    var html = '<div class="screen"><div class="title-row"><a class="back" href="#/" aria-label="ফিরে যান">' + ic('back') + '</a><h1>পরিশোধের সূচি</h1></div>' +
+      '<div class="seg c2"><button data-act="sch-dir" data-arg="taken" class="' + (taken ? 'active' : '') + '">আমি দেব</button>' +
+      '<button data-act="sch-dir" data-arg="given" class="' + (!taken ? 'active' : '') + '">আমি পাব</button></div>' +
+      '<div class="hero amber"><div class="lbl">আগামী মাসে (' + monthName(next) + ') ' + (taken ? 'ঋণ শোধে যাবে' : 'পাওনা আসবে') + '</div><div class="big">' + U.formatTaka(nm) + '</div>' +
+      '<div class="lbl">' + (!s.months.length ? 'কোনো বাকি নেই' : s.count === 0 ? 'সব এই মাসেই শেষ হবে' : 'সব ' + (taken ? 'ঋণ শোধ' : 'টাকা আদায়') + ' হতে আরও ' + bn(s.count) + ' মাস • শেষ কিস্তি ' + monthLabel(s.lastKey)) + '</div></div>';
+    if (!s.months.length) { html += '<div class="empty">কোনো বাকি ঋণ নেই।</div></div>' + nav('home'); render(html); return; }
+    html += '<div class="sec-h"><h2>কোন ঋণ কত মাসে শোধ হবে</h2></div><div class="lstrip">' + s.loans.map(function (ln) {
+      return '<div class="lt"><b>' + h(ln.name) + '</b><small>' + (ln.last === cur ? 'এই মাসেই' : bn(ln.span) + ' মাসে (' + monthName(ln.last) + ')') + '</small></div>';
+    }).join('') + '</div>';
+    html += s.months.map(function (m) {
+      var tag = m.key === cur ? '<span class="chip t-green">চলতি মাস</span>' : m.key === next ? '<span class="chip t-amber">আগামী মাস</span>' : '';
+      return '<div class="mcard' + (m.key === next ? ' hl' : '') + '"><div class="mh"><div><b>' + monthLabel(m.key) + '</b> ' + tag + '</div>' +
+        '<div class="mt"><small>এই মাসে যাবে</small><b>' + U.formatTaka(m.total) + '</b></div></div>' +
+        m.items.map(function (it) {
+          return '<div class="mrow"><span class="nm">' + h(it.name) + '<small> • ' + (it.n > 1 ? 'কিস্তি ' + bn(it.idx) + '/' + bn(it.n) + ' • ' : '') + (it.late ? 'মেয়াদ পার' : U.formatDateShort(it.date)) + '</small></span><b>' + U.formatTaka(it.amount) + '</b></div>';
+        }).join('') + '</div>';
+    }).join('');
+    html += '<div class="totrow"><span>মোট বাকি</span><b>' + U.formatTaka(s.total) + '</b></div></div>' + nav('home');
+    render(html);
+  }
+
+  /* ---------- এডিট হিস্টোরি ---------- */
+  function fmtTime(ms) {
+    var d = new Date(ms), hh = d.getHours(), mm = d.getMinutes();
+    return U.formatDate(U.todayISO(d)) + ', ' + bn((hh % 12 || 12)) + ':' + bn(mm < 10 ? '0' + mm : mm) + (hh < 12 ? ' সকাল' : ' বিকাল');
+  }
+  function vLog(id) {
+    var l = S.getLoan(id);
+    if (!l) { go('#/'); return; }
+    var log = (l.log || []).slice().sort(function (a, b) { return b.at - a.at; }), by = {};
+    log.forEach(function (e) { by[e.by] = (by[e.by] || 0) + 1; });
+    var html = '<div class="screen"><div class="title-row"><a class="back" href="#/loan/' + h(id) + '" aria-label="ফিরে যান">' + ic('back') + '</a><h1>এডিট হিস্টোরি</h1></div>' +
+      '<div class="card"><h3>কে কতবার বদলেছে</h3>' + Object.keys(by).map(function (k) { return '<div class="kv"><span>' + h(k) + '</span><span>' + bn(by[k]) + ' বার</span></div>'; }).join('') +
+      (log.length ? '' : '<p>এখনো কোনো পরিবর্তন লেখা নেই।</p>') + '</div>';
+    html += log.map(function (e) {
+      return '<div class="tx"><div class="mid"><b>' + h(e.text) + '</b><small>' + h(e.by) + ' • ' + fmtTime(e.at) + '</small></div></div>';
+    }).join('') + '</div>';
+    render(html);
+  }
+
+  /* ---------- ডিফল্ট আয়-খরচ ও পূর্বাভাস (ব্যক্তিগত) ---------- */
+  var fc = { key: '' };
+  function vForecast() {
+    var today = U.todayISO();
+    if (!fc.key) fc.key = U.addMonths(today.slice(0, 7) + '-01', 1).slice(0, 7);
+    var f = S.forecast(fc.key, today), hasDefs = f.defs.length > 0;
+    var html = '<div class="screen"><div class="title-row"><a class="back" href="#/money" aria-label="ফিরে যান">' + ic('back') + '</a><h1>মাসের পূর্বাভাস</h1></div>' +
+      '<div class="period"><button data-act="fc-prev" aria-label="আগের">' + ic('back', 20, 'currentColor', 2.4) + '</button><b>' + monthLabel(fc.key) +
+      '</b><button data-act="fc-next" aria-label="পরের"><span style="display:inline-flex;transform:rotate(180deg)">' + ic('back', 20, 'currentColor', 2.4) + '</span></button></div>';
+    if (!hasDefs) {
+      html += '<div class="empty">আগে ডিফল্ট আয় (যেমন বেতন) ও মাসিক খরচ যোগ করুন, তারপর পূর্বাভাস দেখা যাবে।</div>';
+    } else {
+      var committed = Math.max(f.budget, f.spent) + f.loanDue, pct = f.income > 0 ? Math.min(100, Math.round(committed * 100 / f.income)) : 100;
+      html += '<div class="hero' + (f.over ? ' redh' : '') + '"><div><div class="lbl">' + (f.over ? 'আয়ের চেয়ে ' + U.formatTaka(-f.free) + ' বেশি খরচ হয়ে যাচ্ছে!' : 'এই মাসে হাতে থাকবে (আনুমানিক)') + '</div><div class="big">' + U.formatTaka(f.over ? 0 : f.free) + '</div></div>' +
+        '<div class="pbar"><i style="width:' + pct + '%"></i></div><div class="lbl">আয়ের ' + bn(pct) + '% আগেই ধরা আছে</div></div>' +
+        '<div class="card"><div class="kv"><span>প্রত্যাশিত আয়</span><span>' + U.formatTaka(f.income) + '</span></div>' +
+        '<div class="kv"><span>মাসিক খরচ (ডিফল্ট)</span><span>' + U.formatTaka(f.budget) + '</span></div>' +
+        '<div class="kv"><span>ঋণ শোধ (সূচি অনুযায়ী)</span><span>' + U.formatTaka(f.loanDue) + '</span></div>' +
+        '<div class="kv"><span>এ পর্যন্ত আসল খরচ</span><span style="color:' + (f.spent > f.budget ? '#8C1D18' : 'inherit') + '">' + U.formatTaka(f.spent) + '</span></div>' +
+        (f.receive ? '<div class="kv"><span>ঋণ থেকে পাওনা আসবে (হিসাবের বাইরে)</span><span>' + U.formatTaka(f.receive) + '</span></div>' : '') + '</div>';
+    }
+    html += '<div class="sec-h"><h2>ডিফল্ট আয় ও খরচ</h2></div>';
+    html += f.defs.length ? f.defs.map(function (d) {
+      return '<div class="tx"><div class="mid"><b>' + h(d.name) + '</b><small>' + (d.type === 'income' ? 'আয়' : 'খরচ') + ' • ' + monthLabel(d.from) + ' থেকে</small></div>' +
+        '<span class="amt" style="color:' + (d.type === 'income' ? '#16453A' : '#8C1D18') + '">' + U.formatTaka(d.amount) + '</span>' +
+        '<a class="icon-btn" href="#/default/edit/' + h(d.id) + '" aria-label="বদলান">' + ic('edit', 18) + '</a>' +
+        '<button class="x" data-act="del-default" data-arg="' + h(d.id) + '" aria-label="মুছুন">' + ic('x', 18, 'currentColor', 2.4) + '</button></div>';
+    }).join('') : '<div class="empty">এই মাসের জন্য কিছু নেই।</div>';
+    html += '<p class="hint">অঙ্ক বদলালে শুধু নির্বাচিত মাস থেকে বদলাবে, আগের মাসের হিসাব ঠিক থাকবে।</p></div>' +
+      '<div class="bottom-bar"><a class="btn outline" href="#/default/new/expense">＋ খরচ</a><a class="btn" href="#/default/new/income">＋ আয়</a></div>';
+    render(html);
+  }
+  function vDefault(mode, arg) {
+    var d = null, today = U.todayISO();
+    if (mode === 'edit') { S.getState().defaults.forEach(function (x) { if (x.id === arg && !x.deleted) d = x; }); if (!d) { go('#/forecast'); return; } }
+    if (!draft) draft = d ? { type: d.type, name: d.name, amount: String(d.amount / 100), from: fc.key || today.slice(0, 7) }
+      : { type: arg === 'income' ? 'income' : 'expense', name: '', amount: '', from: fc.key || U.addMonths(today.slice(0, 7) + '-01', 1).slice(0, 7) };
+    var isEx = draft.type === 'expense', list = S.cats(draft.type);
+    if (!draft.name || (!d && list.indexOf(draft.name) < 0)) draft.name = list[0];
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/forecast" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (d ? 'অঙ্ক বদলান' : (isEx ? 'ডিফল্ট খরচ' : 'ডিফল্ট আয়')) + '</h1></div>';
+    if (!d) html += '<div class="seg c2"><button data-act="def-type" data-arg="expense" class="' + (isEx ? 'active red' : '') + '">খরচ</button><button data-act="def-type" data-arg="income" class="' + (!isEx ? 'active' : '') + '">আয়</button></div>';
+    html += '<div class="field"><label for="d-cat">খাত</label>' + (d ? '<input type="text" value="' + h(d.name) + '" disabled>' :
+      '<select id="d-cat">' + list.map(function (c) { return '<option value="' + h(c) + '"' + (c === draft.name ? ' selected' : '') + '>' + h(c) + '</option>'; }).join('') + '</select>') + '</div>' +
+      '<div class="field"><label for="f-amount">মাসে কত টাকা</label><input type="text" inputmode="decimal" class="amount ' + (isEx ? 'red' : '') + '" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
+      '<div class="field"><label for="d-from">কোন মাস থেকে কার্যকর</label><input type="month" id="d-from" value="' + h(draft.from) + '"></div>' +
+      '</div><div class="bottom-bar"><button class="btn" data-act="save-default" data-arg="' + (d ? h(d.id) : '') + '">সেভ করুন</button></div>';
+    render(html);
+  }
+  function collectDefault() {
+    var a = document.getElementById('f-amount'), c = document.getElementById('d-cat'), f = document.getElementById('d-from');
+    if (a) draft.amount = a.value; if (c) draft.name = c.value; if (f && f.value) draft.from = f.value;
+  }
+  function saveDefault(id) {
+    collectDefault();
+    var a = U.parseAmount(draft.amount);
+    if (isNaN(a) || a <= 0) { draft.errors = { amount: 'সঠিক টাকার পরিমাণ লিখুন' }; vDefault(id ? 'edit' : 'new', id || draft.type); return; }
+    if (id) S.changeDefault(id, a, draft.from + '-01');
+    else S.addDefault({ type: draft.type, name: draft.name, amount: a, from: draft.from });
+    fc.key = draft.from; afterChange(); toast('সেভ হয়েছে'); go('#/forecast');
   }
 
   /* ---------- সিঙ্ক চালু রাখা ---------- */
@@ -726,6 +901,11 @@
     },
     'dua-addtime': function () { collectDua(); draft.times.push('12:00'); vDuaForm(current.p[2] && current.p[1] === 'edit' ? current.p[2] : null, current.p[2] === 'sample'); },
     'dua-deltime': function (t) { collectDua(); draft.times.splice(+t.getAttribute('data-arg'), 1); vDuaForm(current.p[1] === 'edit' ? current.p[2] : null, current.p[2] === 'sample'); },
+    'dua-addlib': function (t) {
+      var d = DUA_LIB[+t.getAttribute('data-arg')]; if (!d) return;
+      var made = S.createDua({ title: d.title, arabic: d.arabic, translit: d.translit, meaning: d.meaning, target: d.target, times: [] });
+      localStorage.setItem('rin_dua', made.id); afterChange(); toast('যোগ হয়েছে। দোয়া পেজে গিয়ে লক্ষ্য ও সময় ঠিক করুন'); vDuaLib();
+    },
     'save-dua': function (t) { saveDua(t.getAttribute('data-arg') || null); },
     'del-dua': function (t) {
       var id = t.getAttribute('data-arg');
@@ -748,6 +928,15 @@
     backup: function () {
       var blob = new Blob([JSON.stringify(S.getState(), null, 2)], { type: 'application/json' });
       C.download(blob, 'rin-backup-' + U.todayISO() + '.json');
+    },
+    'sch-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vSchedule(); },
+    'fc-prev': function () { fc.key = U.addMonths(fc.key + '-01', -1).slice(0, 7); vForecast(); },
+    'fc-next': function () { fc.key = U.addMonths(fc.key + '-01', 1).slice(0, 7); vForecast(); },
+    'def-type': function (t) { collectDefault(); draft.type = t.getAttribute('data-arg'); draft.name = ''; vDefault('new', draft.type); },
+    'save-default': function (t) { saveDefault(t.getAttribute('data-arg') || null); },
+    'del-default': function (t) {
+      var id = t.getAttribute('data-arg');
+      sheet('এটা মুছবেন?', monthLabel(fc.key) + ' থেকে এই ডিফল্ট আর ধরা হবে না। আগের মাসের হিসাব ঠিক থাকবে।', 'মুছুন', function () { S.deleteDefault(id, fc.key); afterChange(); vForecast(); }, true);
     },
     install: function () {
       if (!installPrompt) return;
@@ -794,13 +983,17 @@
     else if (current.name === 'contract') { if (p[2] === 'edit') vContractForm(p[1]); else vContractView(p[1]); }
     else if (current.name === 'money') vMoney();
     else if (current.name === 'entry') vEntry();
-    else if (current.name === 'dua') { if (p[1] === 'new') vDuaForm(null, p[2] === 'sample'); else if (p[1] === 'edit') vDuaForm(p[2]); else vDua(); }
+    else if (current.name === 'dua') { if (p[1] === 'lib') vDuaLib(); else if (p[1] === 'new') vDuaForm(null, p[2] === 'sample'); else if (p[1] === 'edit') vDuaForm(p[2]); else vDua(); }
     else if (current.name === 'settings') vSettings();
+    else if (current.name === 'schedule') vSchedule();
+    else if (current.name === 'log') vLog(p[1]);
+    else if (current.name === 'forecast') vForecast();
+    else if (current.name === 'default') vDefault(p[1], p[2]);
     else { current.name = 'home'; vHome(); }
   }
 
   window.addEventListener('hashchange', route);
-  S.onChange(function () { if (['home', 'loan', 'settings', 'money'].indexOf(current.name) >= 0) route(); });
+  S.onChange(function () { if (['home', 'loan', 'settings', 'money', 'schedule', 'log', 'forecast'].indexOf(current.name) >= 0) route(); });
   G.onStatus(function () {
     if (current.name === 'home' || current.name === 'money' || current.name === 'dua') refreshChip();
     else if (current.name === 'settings') vSettings();
