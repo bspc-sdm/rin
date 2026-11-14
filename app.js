@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v11';
+  var BUILD = 'rin-v12';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -200,9 +200,9 @@
       '<div class="mini"><span>আগামী ৭ দিনে</span><b>' + U.formatTaka(sum.next7) + '</b></div></div></div>' +
       '<div class="seg c2" role="tablist"><button data-act="dir" data-arg="taken" class="' + (dir === 'taken' ? 'active' : '') + '">আমি দেব</button>' +
       '<button data-act="dir" data-arg="given" class="' + (dir === 'given' ? 'active' : '') + '">আমি পাব</button></div>' +
-      '<a class="linkcard" href="#/parties">' + ic('phone', 24, '#1F5C4A', 2) + '<div class="mid"><b>পাওনাদার ও দেনাদার তালিকা</b><small>কার কাছে কত, এক ট্যাপে কল</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
+      '<a class="linkcard" href="#/parties">' + ic('phone', 24, '#1F5C4A', 2) + '<div class="mid"><b>পাওনাদার ও দেনাদার তালিকা</b><small>একই মানুষের সব ঋণ একসাথে, মোট সহ</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
       '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>পরিশোধের সূচি</b><small>মাসওয়ারি কত যাবে, এক নজরে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
-      '<div class="sec-h"><h2>' + w.list + ' (' + bn(open.length) + ' জন)</h2><span>তারিখ অনুযায়ী</span></div>';
+      '<div class="sec-h"><h2>চলমান ঋণ (' + bn(open.length) + 'টি)</h2><span>শোধের তারিখ অনুযায়ী</span></div>';
     if (!open.length) {
       html += '<div class="empty">' + (dir === 'taken' ? 'কোনো ঋণ বাকি নেই। নতুন ঋণ লিখতে নিচের বাটন চাপুন।' : 'কাউকে ঋণ দেওয়া নেই। দিলে নিচের বাটন চেপে লিখে রাখুন।') + '</div>';
     } else html += open.map(function (l) { return loanItem(l, today); }).join('');
