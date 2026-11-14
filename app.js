@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v6';
+  var BUILD = 'rin-v9';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -56,6 +56,18 @@
     return ui.update ? '<button class="btn" data-act="do-update" style="margin-bottom:4px">⬆ নতুন সংস্করণ এসেছে — এখানে চেপে আপডেট করুন</button>' : '';
   }
 
+  /* ---------- ফোনের কন্টাক্ট থেকে বাছাই (Chrome/Android) ---------- */
+  function pickContact(cb) {
+    if (!(navigator.contacts && navigator.contacts.select)) { toast('এই ব্রাউজারে কন্টাক্ট বাছাই চলে না। Android-এর Chrome-এ খুলুন, বা নম্বর হাতে লিখুন'); return; }
+    navigator.contacts.select(['name', 'tel'], { multiple: false }).then(function (list) {
+      if (!list || !list[0]) return;
+      cb(((list[0].name || [])[0] || '').trim(), ((list[0].tel || [])[0] || '').trim());
+    }).catch(function () { toast('কন্টাক্ট খোলা গেল না। অনুমতি দিন বা নম্বর হাতে লিখুন'); });
+  }
+  function pickBtn(target) {
+    return '<button type="button" class="linkbtn" data-act="pick-contact" data-arg="' + target + '">📇 কন্টাক্ট থেকে বাছুন</button>';
+  }
+
   /* ---------- ছোট সাহায্যকারী ---------- */
   function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
   function toast(msg) {
@@ -77,7 +89,40 @@
       else if (x === 'ok') { o.remove(); onOk(); }
     });
   }
-  function render(html) { root.innerHTML = html; }
+  function render(html) { root.innerHTML = html; enhanceSelects(); }
+  /* ফোনের কালো সিস্টেম-সিলেক্টের বদলে অ্যাপের নিজের ডিজাইনের বাছাই-তালিকা */
+  function enhanceSelects() {
+    Array.prototype.forEach.call(root.querySelectorAll('select'), function (sel) {
+      if (sel.getAttribute('data-enh')) return;
+      sel.setAttribute('data-enh', '1'); sel.style.display = 'none';
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'selbtn';
+      function label() { var o = sel.options[sel.selectedIndex]; return o ? o.text : ''; }
+      b.innerHTML = '<span>' + h(label()) + '</span>' + ic('chev', 18, '#5B635E', 2.4).replace('<svg ', '<svg style="transform:rotate(90deg);flex-shrink:0" ');
+      b.addEventListener('click', function () { openPicker(sel, b, label); });
+      sel.parentNode.insertBefore(b, sel.nextSibling);
+    });
+  }
+  function openPicker(sel, b, label) {
+    var lab = sel.id ? document.querySelector('label[for="' + sel.id + '"]') : null;
+    var title = lab ? lab.textContent : (sel.getAttribute('aria-label') || 'বাছুন');
+    var o = document.createElement('div'); o.className = 'overlay';
+    o.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + h(title) + '</h3><div class="opts">' +
+      Array.prototype.map.call(sel.options, function (op, i) {
+        var on = i === sel.selectedIndex;
+        return '<button type="button" class="opt' + (on ? ' on' : '') + '" data-i="' + i + '"><span>' + h(op.text) + '</span>' + (on ? ic('check', 18, '#1F5C4A', 3) : '') + '</button>';
+      }).join('') + '</div></div>';
+    document.body.appendChild(o);
+    o.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target.closest('[data-i]') : null;
+      if (e.target === o) { o.remove(); return; }
+      if (!t) return;
+      sel.selectedIndex = +t.getAttribute('data-i');
+      var sp = b.querySelector('span'); if (sp) sp.textContent = label();
+      o.remove();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
   function isOpenLoan(l) { return S.balance(l) > 0; }
   function byDue(a, b) { return a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0; }
   /* লেখার ভেতর থেকে মোবাইল নম্বর খুঁজে বের করা (যেমন "রহিম, ০১৭১১-২২৩৩৪৪, কুমিল্লা") */
@@ -155,6 +200,7 @@
       '<div class="mini"><span>আগামী ৭ দিনে</span><b>' + U.formatTaka(sum.next7) + '</b></div></div></div>' +
       '<div class="seg c2" role="tablist"><button data-act="dir" data-arg="taken" class="' + (dir === 'taken' ? 'active' : '') + '">আমি দেব</button>' +
       '<button data-act="dir" data-arg="given" class="' + (dir === 'given' ? 'active' : '') + '">আমি পাব</button></div>' +
+      '<a class="linkcard" href="#/parties">' + ic('phone', 24, '#1F5C4A', 2) + '<div class="mid"><b>পাওনাদার ও দেনাদার তালিকা</b><small>কার কাছে কত, এক ট্যাপে কল</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
       '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>পরিশোধের সূচি</b><small>মাসওয়ারি কত যাবে, এক নজরে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
       '<div class="sec-h"><h2>' + w.list + ' (' + bn(open.length) + ' জন)</h2><span>তারিখ অনুযায়ী</span></div>';
     if (!open.length) {
@@ -169,21 +215,28 @@
 
   /* ---------- নতুন ঋণ / সম্পাদনা ---------- */
   function collectLoan() {
-    ['name', 'contact', 'amount', 'date', 'due', 'n', 'first'].forEach(function (k) {
+    ['name', 'contact', 'amount', 'date', 'due', 'monthly', 'first'].forEach(function (k) {
       var e = document.getElementById('f-' + k);
       if (e) draft[k] = e.value;
     });
   }
   function errHtml(k) { return draft.errors && draft.errors[k] ? '<span class="err">' + h(draft.errors[k]) + '</span>' : ''; }
 
+  function planPreview(total, m, first) {
+    if (!(m > 0) || isNaN(m)) return 'মাসে কত দেবেন লিখুন। কত মাস লাগবে তা নিজে থেকে হিসাব হবে।';
+    if (!(total > 0) || isNaN(total)) return 'আগে ঋণের টাকার পরিমাণ লিখুন।';
+    if (m >= total) return 'পুরোটাই একবারে শোধ হবে, আলাদা কিস্তি লাগবে না।';
+    var n = Math.ceil(total / m), last = U.addMonths(first || U.todayISO(), n - 1);
+    return bn(n) + ' মাস লাগবে • শেষ কিস্তি ' + monthLabel(last.slice(0, 7)) + ' (' + U.formatTaka(total - m * (n - 1)) + ')';
+  }
   function vLoanForm(editId) {
     var loan = editId ? S.getLoan(editId) : null;
     if (editId && !loan) { go('#/'); return; }
     if (!draft) {
       var t = U.todayISO();
       draft = loan
-        ? { dir: loan.dir, name: loan.name, contact: loan.contact, due: loan.dueDate, mode: loan.mode, remind: loan.remind, n: loan.plan ? String(loan.plan.n) : '', first: loan.plan ? loan.plan.first : U.addMonths(t, 1) }
-        : { dir: ui.dir, name: '', contact: '', amount: '', date: t, due: U.addMonths(t, 1), mode: 'full', remind: 1, contract: true, n: '', first: U.addMonths(t, 1) };
+        ? { dir: loan.dir, name: loan.name, contact: loan.contact, due: loan.dueDate, mode: loan.mode, remind: loan.remind, monthly: loan.plan ? String(S.planMonthly(loan.plan) / 100) : '', first: loan.plan ? loan.plan.first : U.addMonths(t, 1) }
+        : { dir: ui.dir, name: '', contact: '', amount: '', date: t, due: U.addMonths(t, 1), mode: 'full', remind: 1, contract: true, monthly: '', first: U.addMonths(t, 1) };
     }
     var w = dirWords(draft.dir);
     var html = '<div class="screen form"><div class="title-row"><a class="back" href="' + (loan ? '#/loan/' + h(loan.id) : '#/') + '" aria-label="ফিরে যান">' + ic('back') + '</a>' +
@@ -193,7 +246,7 @@
         '<button data-act="form-dir" data-arg="given" class="' + (draft.dir === 'given' ? 'active' : '') + '">ঋণ দিলাম</button></div>';
     }
     html += '<div class="field"><label for="f-name">' + w.person + '</label><input type="text" id="f-name" list="dl-people" value="' + h(draft.name) + '" autocomplete="off">' + errHtml('name') + '<datalist id="dl-people">' + S.peopleList(false).map(function (x) { return '<option value="' + h(x.name) + '"></option>'; }).join('') + '</datalist></div>' +
-      '<div class="field"><label for="f-contact">মোবাইল নম্বর (কল দেওয়ার জন্য) ও ঠিকানা</label><input type="text" id="f-contact" inputmode="tel" value="' + h(draft.contact) + '" placeholder="০১৭XXXXXXXX" autocomplete="off"></div>';
+      '<div class="field"><label for="f-contact">মোবাইল নম্বর (কল দেওয়ার জন্য) ও ঠিকানা</label><input type="text" id="f-contact" inputmode="tel" value="' + h(draft.contact) + '" placeholder="০১৭XXXXXXXX" autocomplete="off">' + pickBtn('loan') + '</div>';
     if (!loan) {
       html += '<div class="field"><label for="f-amount">টাকার পরিমাণ</label><input type="text" inputmode="decimal" class="amount" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
         '<div class="row2"><div class="field"><label for="f-date">ঋণের তারিখ</label><input type="date" id="f-date" value="' + h(draft.date) + '"></div>' +
@@ -204,8 +257,9 @@
     html += errHtml('due') +
       '<div class="field"><span class="lbl">শোধের ধরন</span><div class="seg c2"><button data-act="form-mode" data-arg="full" class="' + (draft.mode === 'full' ? 'active' : '') + '">একবারে পুরো</button>' +
       '<button data-act="form-mode" data-arg="partial" class="' + (draft.mode === 'partial' ? 'active' : '') + '">কিস্তিতে (আংশিক)</button></div></div>' +
-      (draft.mode === 'partial' ? '<div class="row2"><div class="field"><label for="f-n">কত মাসে শোধ (কিস্তি)</label><input type="text" inputmode="numeric" id="f-n" value="' + h(draft.n) + '" placeholder="যেমন ৩" autocomplete="off"></div>' +
-        '<div class="field"><label for="f-first">প্রথম কিস্তির তারিখ</label><input type="date" id="f-first" value="' + h(draft.first) + '"></div></div>' + errHtml('n') + '<p class="hint">সমান কিস্তিতে ভাগ হবে; সূচির পাতায় মাসওয়ারি দেখা যাবে।</p>' : '') +
+      (draft.mode === 'partial' ? '<div class="field"><label for="f-monthly">মাসে কত টাকা ' + (draft.dir === 'taken' ? 'দেবেন' : 'পাবেন') + '</label><input type="text" inputmode="decimal" class="amount" id="f-monthly" value="' + h(draft.monthly) + '" placeholder="৳ ০" autocomplete="off"></div>' +
+        '<div class="field"><label for="f-first">প্রথম কিস্তির তারিখ</label><input type="date" id="f-first" value="' + h(draft.first) + '"></div>' + errHtml('n') +
+        '<div class="note-box" id="plan-prev">' + h(planPreview(loan ? S.balance(loan) : U.parseAmount(draft.amount), U.parseAmount(draft.monthly), draft.first)) + '</div>' : '') +
       '<div class="field"><span class="lbl">রিমাইন্ডার (গুগল ক্যালেন্ডারে)</span><div class="pills">' +
       [[1, '১ দিন আগে'], [3, '৩ দিন আগে'], [0, 'শোধের দিন']].map(function (r) {
         return '<button class="pill ' + (draft.remind === r[0] ? 'active' : '') + '" data-act="form-remind" data-arg="' + r[0] + '">' + r[1] + '</button>';
@@ -230,21 +284,24 @@
       if (draft.due && draft.date && draft.due < draft.date) errors.due = 'শোধের তারিখ ঋণের তারিখের আগে হতে পারে না';
       if (!draft.date) errors.date = 'ঋণের তারিখ দিন';
     }
-    var pn = parseInt(U.fromBn(String(draft.n || '')), 10), wantPlan = draft.mode === 'partial' && pn >= 2;
-    if (draft.mode === 'partial' && String(draft.n || '').trim() && !(pn >= 1 && pn <= 60)) errors.n = 'মাসের সংখ্যা ১ থেকে ৬০-এর মধ্যে দিন';
-    if (wantPlan && !draft.first) errors.n = 'প্রথম কিস্তির তারিখ দিন';
+    var totalNow = editId ? S.balance(S.getLoan(editId)) : amount;
+    var pm = draft.mode === 'partial' && String(draft.monthly || '').trim() ? U.parseAmount(draft.monthly) : null;
+    var wantPlan = pm != null && pm > 0 && pm < totalNow;
+    if (pm != null && (isNaN(pm) || pm <= 0)) errors.n = 'মাসিক টাকার সঠিক অঙ্ক লিখুন';
+    else if (wantPlan && Math.ceil(totalNow / pm) > 120) errors.n = 'মাস ১২০-এর বেশি হয়ে যাচ্ছে, মাসিক অঙ্ক বাড়ান';
+    else if (wantPlan && !draft.first) errors.n = 'প্রথম কিস্তির তারিখ দিন';
     if (Object.keys(errors).length) { draft.errors = errors; vLoanForm(editId); window.scrollTo(0, 0); return; }
     if (editId) {
       S.rememberPerson({ name: draft.name, contact: draft.contact });
       S.updateLoan(editId, { name: draft.name.trim(), contact: draft.contact.trim(), dueDate: draft.due, mode: draft.mode, remind: draft.remind });
       var cur = S.getLoan(editId);
-      if (wantPlan) { if (!cur.plan || cur.plan.n !== pn || cur.plan.first !== draft.first) S.setPlan(editId, pn, draft.first); }
-      else if (cur.plan) S.setPlan(editId, 0);
+      if (wantPlan) { if (!cur.plan || S.planMonthly(cur.plan) !== pm || cur.plan.first !== draft.first) S.setMonthlyPlan(editId, pm, draft.first, !!cur.plan); }
+      else if (cur.plan) S.setMonthlyPlan(editId, 0);
       afterChange(); toast('বদল সেভ হয়েছে'); go('#/loan/' + editId); return;
     }
     S.rememberPerson({ name: draft.name, contact: draft.contact });
     var loan = S.createLoan({ name: draft.name.trim(), contact: draft.contact.trim(), dir: draft.dir, amount: amount, date: draft.date, dueDate: draft.due, mode: draft.mode, remind: draft.remind });
-    if (wantPlan) S.setPlan(loan.id, pn, draft.first);
+    if (wantPlan) S.setMonthlyPlan(loan.id, pm, draft.first, false);
     ui.dir = draft.dir; localStorage.setItem('rin_dir', ui.dir);
     var wantContract = draft.contract;
     afterChange();
@@ -283,7 +340,8 @@
       : '<a class="linkcard" href="#/contract/' + h(l.id) + '/edit">' + ic('file', 24, '#1F5C4A', 2) + '<div class="mid"><b>চুক্তিপত্র লিখুন</b><small>তারিখ, টাকা, মেয়াদ ও সাক্ষীসহ</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     if (l.plan && bal > 0) {
       var ri = S.remainingInstallments(l), nx = ri[0];
-      html += '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>' + bn(l.plan.n) + ' মাসের কিস্তি' + (nx ? ' • পরের কিস্তি ' + U.formatTaka(nx.amount) : '') + '</b><small>' + (nx ? U.formatDate(nx.date) + ' • ' : '') + 'বাকি ' + bn(ri.length) + 'টি কিস্তি</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
+      html += '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>মাসে ' + U.formatTaka(S.planMonthly(l.plan)) + ' • ' + bn(l.plan.n) + ' মাস' + (nx ? ' • পরের কিস্তি ' + U.formatTaka(nx.amount) : '') + '</b><small>' + (nx ? U.formatDate(nx.date) + ' • ' : '') + 'বাকি ' + bn(ri.length) + 'টি কিস্তি</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
+        '<a class="btn outline small" href="#/plan/' + h(l.id) + '">মাসিক কিস্তি কমান / বাড়ান</a>';
     }
     html += '<a class="linkcard" href="#/log/' + h(l.id) + '">' + ic('edit', 24, '#1F5C4A', 2) + '<div class="mid"><b>এডিট হিস্টোরি</b><small>' + bn((l.log || []).length) + 'টি পরিবর্তন লেখা আছে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     html += '<div class="sec-h"><h2>লেনদেনের ইতিহাস</h2></div>';
@@ -386,7 +444,7 @@
     if (!draft) {
       var c = l.contract || {};
       var pp = S.findPerson(l.name, false) || {};
-      draft = { myInfo: c.myInfo || S.getProfile(), otherInfo: c.otherInfo || pp.addr || '', medium: c.medium || C.MEDIUMS[0], interest: c.interest || C.INTERESTS[0], w1: c.w1 || '', w2: c.w2 || '', extra: c.extra || '' };
+      draft = { myInfo: c.myInfo || S.getProfile(), myPhone: c.myPhone || S.getProfilePhone(), otherInfo: c.otherInfo || pp.addr || '', medium: c.medium || C.MEDIUMS[0], interest: c.interest || C.INTERESTS[0], w1: c.w1 || '', w2: c.w2 || '', extra: c.extra || '' };
     }
     var lender = l.dir === 'taken' ? l.name : 'আমি', borrower = l.dir === 'taken' ? 'আমি' : l.name;
     var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/loan/' + h(id) + '" aria-label="ফিরে যান">' + ic('back') + '</a>' +
@@ -395,11 +453,12 @@
       '<b>ঋণদাতা ' + h(lender) + ' → ঋণগ্রহীতা ' + h(borrower) + '</b><span>' + U.formatTaka(fa.amount) + ' (' + h(U.takaInWords(fa.amount)) + ')</span>' +
       '<span>ঋণের তারিখ ' + U.formatDate(fa.date) + ' • শোধ ' + U.formatDate(l.dueDate) + ' (' + U.termText(fa.date, l.dueDate) + ')</span></div>' +
       '<div class="field"><label for="c-my">আমার নাম ও ঠিকানা</label><input type="text" id="c-my" value="' + h(draft.myInfo) + '" placeholder="নাম, গ্রাম/এলাকা, জেলা" autocomplete="off"></div>' +
+      '<div class="field"><label for="c-phone">আমার মোবাইল নম্বর</label><input type="text" id="c-phone" inputmode="tel" value="' + h(draft.myPhone) + '" placeholder="০১৭XXXXXXXX" autocomplete="off">' + pickBtn('cphone') + '</div>' +
       '<div class="field"><label for="c-other">অপর পক্ষের ঠিকানা (ঐচ্ছিক)</label><input type="text" id="c-other" value="' + h(draft.otherInfo) + '" placeholder="ঠিকানা বা পরিচয়পত্র নম্বর" autocomplete="off"></div>' +
       '<div class="field"><label for="c-medium">টাকা দেওয়ার মাধ্যম</label>' + selectHtml('c-medium', C.MEDIUMS, draft.medium) + '</div>' +
       '<div class="field"><label for="c-interest">সুদ</label>' + selectHtml('c-interest', C.INTERESTS, draft.interest) + '</div>' +
-      '<div class="field"><label for="c-w1">সাক্ষী ১ (নাম ও ফোন)</label><input type="text" id="c-w1" list="dl-wit" value="' + h(draft.w1) + '" placeholder="নাম, মোবাইল নম্বর" autocomplete="off"></div>' +
-      '<div class="field"><label for="c-w2">সাক্ষী ২ (নাম ও ফোন)</label><input type="text" id="c-w2" list="dl-wit" value="' + h(draft.w2) + '" placeholder="নাম, মোবাইল নম্বর" autocomplete="off"></div>' +
+      '<div class="field"><label for="c-w1">সাক্ষী ১ (নাম ও ফোন)</label><input type="text" id="c-w1" list="dl-wit" value="' + h(draft.w1) + '" placeholder="নাম, মোবাইল নম্বর" autocomplete="off">' + pickBtn('w1') + '</div>' +
+      '<div class="field"><label for="c-w2">সাক্ষী ২ (নাম ও ফোন)</label><input type="text" id="c-w2" list="dl-wit" value="' + h(draft.w2) + '" placeholder="নাম, মোবাইল নম্বর" autocomplete="off">' + pickBtn('w2') + '</div>' +
       '<datalist id="dl-wit">' + S.peopleList(true).map(function (x) { return '<option value="' + h(x.name) + '"></option>'; }).join('') + '</datalist>' +
       '<div class="field"><label for="c-extra">অতিরিক্ত শর্ত (ঐচ্ছিক)</label><input type="text" id="c-extra" value="' + h(draft.extra) + '" placeholder="যেমন: বাকি টাকা দুই কিস্তিতে" autocomplete="off"></div>' +
       '</div><div class="bottom-bar"><button class="btn" data-act="save-contract" data-arg="' + h(id) + '">চুক্তিপত্র তৈরি করুন</button></div>';
@@ -410,11 +469,11 @@
     if (!l || !fa) { go('#/'); return; }
     function v(i) { return (document.getElementById(i) || {}).value || ''; }
     var contract = {
-      myInfo: v('c-my').trim(), otherInfo: v('c-other').trim(), medium: v('c-medium'), interest: v('c-interest'),
+      myInfo: v('c-my').trim(), myPhone: v('c-phone').trim(), otherInfo: v('c-other').trim(), medium: v('c-medium'), interest: v('c-interest'),
       w1: v('c-w1').trim(), w2: v('c-w2').trim(), extra: v('c-extra').trim(),
       amount: fa.amount, date: fa.date, dueDate: l.dueDate, mode: l.mode, createdAt: Date.now()
     };
-    S.setProfile(contract.myInfo);
+    S.setProfile(contract.myInfo, contract.myPhone);
     S.rememberPerson({ name: l.name, contact: l.contact, addr: contract.otherInfo });
     S.rememberPerson({ name: contract.w1 }, true); S.rememberPerson({ name: contract.w2 }, true);
     S.updateLoan(id, { contract: contract });
@@ -478,7 +537,8 @@
       '<button class="btn outline small" data-act="backup">ব্যাকআপ ডাউনলোড (JSON)</button>' +
       '<label class="btn outline small" style="cursor:pointer">ব্যাকআপ থেকে ফিরিয়ে আনুন<input type="file" id="restore-file" accept=".json,application/json" class="hidden"></label></div>';
     html += '<div class="card"><h3>আমার নাম ও ঠিকানা</h3><p>একবার লিখে রাখলে চুক্তিপত্রে নিজে থেকে বসবে। লেখা শেষে বাইরে চাপলেই সেভ হয়ে যায়।</p>' +
-      '<textarea id="s-me" rows="2" placeholder="নাম, গ্রাম/এলাকা, জেলা">' + h(S.getProfile()) + '</textarea></div>';
+      '<textarea id="s-me" rows="2" placeholder="নাম, গ্রাম/এলাকা, জেলা">' + h(S.getProfile()) + '</textarea>' +
+      '<label for="s-phone" style="margin-top:8px;display:block">আমার মোবাইল নম্বর</label><input type="text" id="s-phone" inputmode="tel" value="' + h(S.getProfilePhone()) + '" placeholder="০১৭XXXXXXXX" autocomplete="off">' + pickBtn('me') + '</div>';
     var plist = S.peopleList(false).concat(S.peopleList(true));
     if (plist.length) {
       html += '<div class="card"><h3>সংরক্ষিত ব্যক্তি (' + bn(plist.length) + ')</h3><p>ঋণ বা চুক্তিপত্রে একবার লিখলেই এখানে জমে, পরের বার নাম লিখতে গেলে নিজে থেকে আসে।</p>' +
@@ -924,6 +984,72 @@
   }
   function h2t(x) { return String(x == null ? '' : x); }
 
+
+  /* ---------- পাওনাদার / দেনাদার তালিকা (ব্যক্তি অনুযায়ী) ---------- */
+  function vParties() {
+    var today = U.todayISO(), dir = ui.dir, taken = dir === 'taken', map = {}, order = [];
+    S.liveLoans(dir).filter(isOpenLoan).forEach(function (l) {
+      var k = (l.name || '').trim().toLowerCase();
+      if (!map[k]) { map[k] = { name: l.name, contact: l.contact, total: 0, loans: [] }; order.push(k); }
+      var g = map[k]; g.total += S.balance(l); g.loans.push(l);
+      if (!g.contact && l.contact) g.contact = l.contact;
+    });
+    var list = order.map(function (k) { return map[k]; }).sort(function (a, b) { return b.total - a.total; });
+    var sum = list.reduce(function (a, g) { return a + g.total; }, 0);
+    var html = '<div class="screen"><div class="title-row"><a class="back" href="#/" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (taken ? 'পাওনাদার তালিকা' : 'দেনাদার তালিকা') + '</h1></div>' +
+      '<div class="seg c2"><button data-act="pt-dir" data-arg="taken" class="' + (taken ? 'active' : '') + '">পাওনাদার (আমি দেব)</button>' +
+      '<button data-act="pt-dir" data-arg="given" class="' + (!taken ? 'active' : '') + '">দেনাদার (আমি পাব)</button></div>' +
+      '<div class="hero" style="padding:14px 18px;gap:2px"><span style="font-size:13px">' + (taken ? 'মোট ' + bn(list.length) + ' জনকে দিতে হবে' : 'মোট ' + bn(list.length) + ' জনের কাছে পাব') + '</span><b style="font-size:28px">' + U.formatTaka(sum) + '</b></div>';
+    if (!list.length) html += '<div class="empty">' + (taken ? 'কারও কাছে ঋণ বাকি নেই।' : 'কারও কাছে পাওনা বাকি নেই।') + '</div>';
+    list.forEach(function (g) {
+      g.loans.sort(byDue);
+      var first = g.loans[0], st = S.status(first, today), c = chipFor(st), tel = telHref(g.contact);
+      html += '<div class="item" style="gap:8px"><a href="#/loan/' + h(first.id) + '" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-decoration:none;color:inherit">' +
+        '<div class="avatar ' + c.av + '">' + h((g.name || '?').trim().charAt(0)) + '</div>' +
+        '<div class="mid"><b>' + h(g.name) + '</b><small>' + (g.loans.length > 1 ? bn(g.loans.length) + 'টি ঋণ • ' : '') + 'পরের শোধ ' + U.formatDateShort(first.dueDate) + '</small></div>' +
+        '<div class="end"><b>' + U.formatTaka(g.total) + '</b><span class="chip ' + c.cls + '">' + h(c.text) + '</span></div></a>' +
+        (tel ? '<a class="icon-btn" href="' + h(tel) + '" aria-label="কল করুন">' + ic('phone', 20, '#1F5C4A', 2.2) + '</a>' : '') + '</div>';
+    });
+    html += '</div>' + nav('home');
+    render(html);
+  }
+
+
+  /* ---------- মাসিক কিস্তি কমানো / বাড়ানো ---------- */
+  function vPlan(id) {
+    var l = S.getLoan(id);
+    if (!l || S.balance(l) <= 0) { go(l ? '#/loan/' + id : '#/'); return; }
+    var bal = S.balance(l), today = U.todayISO(), ri = S.remainingInstallments(l), cur = S.planMonthly(l.plan);
+    if (!draft) draft = { monthly: cur ? String(cur / 100) : '', first: ri[0] && ri[0].date >= today ? ri[0].date : today };
+    var w = dirWords(l.dir);
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/loan/' + h(id) + '" aria-label="ফিরে যান">' + ic('back') + '</a><h1>মাসিক কিস্তি</h1></div>' +
+      '<div class="hero" style="padding:14px 16px;gap:2px"><span style="font-size:13px">' + h(l.name) + ' • ' + w.hero + '</span><b style="font-size:26px">' + U.formatTaka(bal) + '</b>' +
+      '<span style="font-size:13px">' + (cur ? 'এখন মাসে ' + U.formatTaka(cur) + ' • বাকি ' + bn(ri.length) + 'টি কিস্তি' : 'এখনো মাসিক কিস্তি ঠিক করা নেই') + '</span></div>' +
+      '<div class="field"><label for="p-monthly">নতুন মাসিক অঙ্ক</label><input type="text" inputmode="decimal" class="amount" id="p-monthly" value="' + h(draft.monthly) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('m') + '</div>' +
+      '<div class="pills"><button class="pill" data-act="plan-step" data-arg="-100000">− ১,০০০</button><button class="pill" data-act="plan-step" data-arg="-50000">− ৫০০</button>' +
+      '<button class="pill" data-act="plan-step" data-arg="50000">+ ৫০০</button><button class="pill" data-act="plan-step" data-arg="100000">+ ১,০০০</button></div>' +
+      '<div class="field"><label for="p-first">কোন তারিখের কিস্তি থেকে নতুন অঙ্কে</label><input type="date" id="p-first" value="' + h(draft.first) + '"></div>' +
+      '<div class="note-box" id="plan-prev2">' + h(planPreview(bal, U.parseAmount(draft.monthly), draft.first)) + '</div>' +
+      '<p class="hint">আগে যা শোধ হয়ে গেছে তা বদলাবে না। শুধু বাকি ' + U.formatTaka(bal) + ' নতুন অঙ্কে ভাগ হবে।</p>' +
+      '</div><div class="bottom-bar"><button class="btn" data-act="plan-save" data-arg="' + h(id) + '">সেভ করুন</button></div>';
+    render(html);
+  }
+  function collectPlan() {
+    var m = document.getElementById('p-monthly'), f = document.getElementById('p-first');
+    if (m) draft.monthly = m.value; if (f && f.value) draft.first = f.value;
+  }
+  function planSave(id) {
+    collectPlan();
+    var l = S.getLoan(id); if (!l) { go('#/'); return; }
+    var bal = S.balance(l), m = U.parseAmount(draft.monthly);
+    if (isNaN(m) || m <= 0) { draft.errors = { m: 'সঠিক মাসিক অঙ্ক লিখুন' }; vPlan(id); return; }
+    if (Math.ceil(bal / m) > 120) { draft.errors = { m: 'মাস ১২০-এর বেশি হয়ে যাচ্ছে, অঙ্ক বাড়ান' }; vPlan(id); return; }
+    sheet('কিস্তি বদলাবেন?', planPreview(bal, m, draft.first) + '। আগের শোধ বদলাবে না।', 'হ্যাঁ, বদলান', function () {
+      S.setMonthlyPlan(id, m, draft.first, !!l.plan);
+      afterChange(); toast('মাসিক কিস্তি বদলে গেছে'); go('#/loan/' + id);
+    });
+  }
+
   /* ---------- সিঙ্ক চালু রাখা ---------- */
   var syncTimer = null;
   function scheduleSync() {
@@ -1019,6 +1145,28 @@
     'del-person': function (t) { S.deletePerson(t.getAttribute('data-arg')); afterChange(); vSettings(); },
     'waive-full': function (t) { collectWaive(); draft.full = t.getAttribute('data-arg') === '1'; vWaive(current.p[1]); },
     'waive-go': function (t) { waiveGo(t.getAttribute('data-arg')); },
+    'pick-contact': function (t) {
+      var where = t.getAttribute('data-arg');
+      pickContact(function (name, tel) {
+        function setv(id, v) { var e = document.getElementById(id); if (e) e.value = v; }
+        if (where === 'loan') {
+          var n = document.getElementById('f-name');
+          if (n && !n.value.trim() && name) n.value = name;
+          setv('f-contact', tel);
+        } else if (where === 'me') {
+          S.setProfile(undefined, tel); afterChange(); setv('s-phone', tel); toast('আমার নম্বর সেভ হয়েছে');
+        } else if (where === 'cphone') setv('c-phone', tel);
+        else if (where === 'w1' || where === 'w2') setv('c-' + where, [name, tel].filter(Boolean).join(', '));
+      });
+    },
+    'pt-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vParties(); },
+    'plan-step': function (t) {
+      collectPlan();
+      var l = S.getLoan(current.p[1]), bal = l ? S.balance(l) : 0, cur = parseFloat(U.fromBn(draft.monthly)) || 0;
+      var v = Math.max(100, Math.round(cur * 100) + (+t.getAttribute('data-arg')));
+      draft.monthly = String(Math.min(v, bal) / 100); draft.errors = null; vPlan(current.p[1]);
+    },
+    'plan-save': function (t) { planSave(t.getAttribute('data-arg')); },
     'do-update': function () { doUpdate(); },
     'check-update': function () { checkUpdate(true); },
     'sch-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vSchedule(); },
@@ -1044,12 +1192,21 @@
   });
   root.addEventListener('input', function (e) {
     if (e.target.id === 'f-amount' && current.name === 'tx') updateTxPreview();
+    if ((e.target.id === 'f-monthly' || e.target.id === 'f-amount' || e.target.id === 'f-first') && (current.name === 'add' || current.name === 'edit')) {
+      var pv = document.getElementById('plan-prev'), l0 = current.name === 'edit' ? S.getLoan(current.p[1]) : null;
+      if (pv) pv.textContent = planPreview(l0 ? S.balance(l0) : U.parseAmount((document.getElementById('f-amount') || {}).value), U.parseAmount((document.getElementById('f-monthly') || {}).value), (document.getElementById('f-first') || {}).value);
+    }
+    if ((e.target.id === 'p-monthly' || e.target.id === 'p-first') && current.name === 'plan') {
+      var l1 = S.getLoan(current.p[1]), pv2 = document.getElementById('plan-prev2');
+      if (l1 && pv2) pv2.textContent = planPreview(S.balance(l1), U.parseAmount(document.getElementById('p-monthly').value), document.getElementById('p-first').value);
+    }
   });
   root.addEventListener('change', function (e) {
     var id = e.target.id;
     if (id === 'r-from' || id === 'r-to') { fin[id === 'r-from' ? 'from' : 'to'] = e.target.value; vMoney(); return; }
     if (id === 'e-cat' && e.target.value === '__new') { collectEntry(); draft.newCat = true; vEntry(); return; }
     if (id === 's-me') { S.setProfile(e.target.value); afterChange(); toast('সেভ হয়েছে'); return; }
+    if (id === 's-phone') { S.setProfile(undefined, e.target.value); afterChange(); toast('সেভ হয়েছে'); return; }
     if (id === 'f-name') {
       var pf = S.findPerson(e.target.value, false), cf = document.getElementById('f-contact');
       if (pf && cf && !cf.value.trim() && pf.contact) cf.value = pf.contact;
@@ -1084,6 +1241,8 @@
     else if (current.name === 'entry') vEntry();
     else if (current.name === 'dua') { if (p[1] === 'lib') vDuaLib(); else if (p[1] === 'new') vDuaForm(null, p[2] === 'sample'); else if (p[1] === 'edit') vDuaForm(p[2]); else vDua(); }
     else if (current.name === 'settings') vSettings();
+    else if (current.name === 'plan') vPlan(p[1]);
+    else if (current.name === 'parties') vParties();
     else if (current.name === 'waive') vWaive(p[1]);
     else if (current.name === 'schedule') vSchedule();
     else if (current.name === 'log') vLog(p[1]);
@@ -1093,7 +1252,7 @@
   }
 
   window.addEventListener('hashchange', route);
-  S.onChange(function () { if (['home', 'loan', 'settings', 'money', 'schedule', 'log', 'forecast'].indexOf(current.name) >= 0) route(); });
+  S.onChange(function () { if (['home', 'loan', 'settings', 'money', 'schedule', 'log', 'forecast', 'parties'].indexOf(current.name) >= 0) route(); });
   G.onStatus(function () {
     if (current.name === 'home' || current.name === 'money' || current.name === 'dua') refreshChip();
     else if (current.name === 'settings') vSettings();

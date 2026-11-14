@@ -10,7 +10,7 @@
 
   /* চুক্তির সব লেখা একটা অবজেক্টে সাজানো (HTML আলাদা ফাংশনে) */
   function build(loan, c) {
-    var meText = clean(c.myInfo) || '[আমার নাম ও ঠিকানা]';
+    var meText = (clean(c.myInfo) || '[আমার নাম ও ঠিকানা]') + (clean(c.myPhone) ? ', মোবাইল ' + clean(c.myPhone) : '');
     var otherText = clean(loan.name) +
       (clean(loan.contact) ? ', ' + clean(loan.contact) : '') +
       (clean(c.otherInfo) ? ', ' + clean(c.otherInfo) : '');

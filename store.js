@@ -374,9 +374,21 @@
 
   /* ---------- কিস্তির পরিকল্পনা ও মাসওয়ারি সূচি ---------- */
   function ym(iso) { return iso.slice(0, 7); }
+  function paidSum(loan) {
+    return liveTxs(loan).filter(function (t) { return t.kind === 'pay' || t.kind === 'waive'; }).reduce(function (a, t) { return a + t.amount; }, 0);
+  }
   function planInstallments(loan) {
     var pl = loan.plan;
     if (!pl || !pl.n || pl.n < 1) return null;
+    if (pl.monthly > 0) {
+      var o = [], left = pl.total, k0 = 0;
+      while (left > 0 && k0 < 600) {
+        var amt = Math.min(pl.monthly, left);
+        o.push({ idx: k0 + 1, n: pl.n, date: U.addMonths(pl.first, k0), amount: amt });
+        left -= amt; k0++;
+      }
+      return o;
+    }
     var each = Math.floor(pl.total / pl.n), out = [];
     for (var k = 0; k < pl.n; k++) {
       out.push({ idx: k + 1, n: pl.n, date: U.addMonths(pl.first, k), amount: k < pl.n - 1 ? each : pl.total - each * (pl.n - 1) });
@@ -389,8 +401,9 @@
     if (bal <= 0) return [];
     var inst = planInstallments(loan);
     if (!inst) return [{ idx: 1, n: 1, date: loan.dueDate, amount: bal }];
-    var paid = liveTxs(loan).filter(function (t) { return (t.kind === 'pay' || t.kind === 'waive') && (t.createdAt || 0) >= (loan.plan.at || 0); })
-      .reduce(function (a, t) { return a + t.amount; }, 0);
+    var paid = loan.plan.base != null ? Math.max(0, paidSum(loan) - loan.plan.base)
+      : liveTxs(loan).filter(function (t) { return (t.kind === 'pay' || t.kind === 'waive') && (t.createdAt || 0) > (loan.plan.at || 0); })
+        .reduce(function (a, t) { return a + t.amount; }, 0);
     var out = [];
     inst.forEach(function (it) {
       var take = Math.min(paid, it.amount);
@@ -406,7 +419,24 @@
     var loan = getLoan(id);
     if (!loan) return null;
     if (!n || n < 1) return updateLoan(id, { plan: null });
-    return updateLoan(id, { plan: { n: n, first: first, total: balance(loan), at: Date.now() }, dueDate: U.addMonths(first, n - 1) });
+    return updateLoan(id, { plan: { n: n, first: first, total: balance(loan), at: Date.now(), base: paidSum(loan) }, dueDate: U.addMonths(first, n - 1) });
+  }
+  function planMonthly(plan) { return plan ? (plan.monthly || Math.ceil(plan.total / plan.n)) : 0; }
+  /* মাসে কত দেবেন → কত মাস লাগবে নিজে হিসাব হয়। বদলালে শুধু বাকি টাকা নতুন অঙ্কে ভাগ হয়, আগের শোধ অপরিবর্তিত থাকে */
+  function setMonthlyPlan(id, monthly, first, changed) {
+    var loan = getLoan(id);
+    if (!loan) return null;
+    var bal = balance(loan);
+    if (!(monthly > 0) || monthly >= bal || !first) {
+      if (loan.plan) { loan.plan = null; logIt(loan, 'plan', 'কিস্তির পরিকল্পনা বন্ধ — একবারে শোধ'); touch(loan); save(); }
+      return loan;
+    }
+    var n = Math.ceil(bal / monthly);
+    loan.plan = { n: n, first: first, total: bal, monthly: monthly, at: Date.now(), base: paidSum(loan) };
+    loan.dueDate = U.addMonths(first, n - 1);
+    logIt(loan, 'plan', (changed ? 'মাসিক কিস্তি বদল: ' : 'মাসিক কিস্তি ঠিক: ') + U.formatTaka(monthly, true) + ' করে ' + n + ' মাস');
+    touch(loan); save();
+    return loan;
   }
   function schedule(dir, today) {
     var cur = ym(today), map = {}, loans = {};
@@ -494,10 +524,13 @@
 
   /* ---------- আমার তথ্য ও সংরক্ষিত ব্যক্তি (একবার লিখলেই মনে থাকে) ---------- */
   function getProfile() { return state.profile.info || ''; }
-  function setProfile(info) {
-    info = (info || '').trim();
-    if (info === (state.profile.info || '')) return;
-    state.profile = { info: info, updatedAt: Date.now() };
+  function getProfilePhone() { return state.profile.phone || ''; }
+  /* info বা phone — যেটা undefined সেটা অপরিবর্তিত থাকে */
+  function setProfile(info, phone) {
+    var ni = info === undefined ? (state.profile.info || '') : String(info || '').trim();
+    var np = phone === undefined ? (state.profile.phone || '') : String(phone || '').trim();
+    if (ni === (state.profile.info || '') && np === (state.profile.phone || '')) return;
+    state.profile = { info: ni, phone: np, updatedAt: Date.now() };
     save();
   }
   function peopleList(witness) {
@@ -542,8 +575,8 @@
     liveDuas: liveDuas, getDua: getDua, createDua: createDua, updateDua: updateDua, deleteDua: deleteDua,
     duaCount: duaCount, setDuaCount: setDuaCount, bumpDua: bumpDua, duaLastDays: duaLastDays,
     cats: cats, addCat: addCat, addEntry: addEntry, deleteEntry: deleteEntry, allEntries: allEntries,
-    getProfile: getProfile, setProfile: setProfile, peopleList: peopleList, findPerson: findPerson, rememberPerson: rememberPerson, deletePerson: deletePerson,
-    logIt: logIt, planInstallments: planInstallments, remainingInstallments: remainingInstallments, setPlan: setPlan, schedule: schedule, monthTotal: monthTotal,
+    getProfile: getProfile, getProfilePhone: getProfilePhone, setProfile: setProfile, peopleList: peopleList, findPerson: findPerson, rememberPerson: rememberPerson, deletePerson: deletePerson,
+    logIt: logIt, planInstallments: planInstallments, remainingInstallments: remainingInstallments, setPlan: setPlan, setMonthlyPlan: setMonthlyPlan, planMonthly: planMonthly, schedule: schedule, monthTotal: monthTotal,
     liveDefaults: liveDefaults, defaultsFor: defaultsFor, addDefault: addDefault, changeDefault: changeDefault, deleteDefault: deleteDefault, forecast: forecast,
     rangeFor: rangeFor, shiftAnchor: shiftAnchor, report: report, totalBalance: totalBalance, LOAN_CAT: LOAN_CAT
   };
