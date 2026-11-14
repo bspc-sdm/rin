@@ -15,7 +15,7 @@
   var listeners = [];
 
   function emptyState() {
-    return { v: 2, loans: [], duas: [], entries: [], defaults: [], cats: { income: DEFAULT_CATS.income.slice(), expense: DEFAULT_CATS.expense.slice() }, updatedAt: 0 };
+    return { v: 2, loans: [], duas: [], entries: [], defaults: [], profile: { info: '', updatedAt: 0 }, people: [], cats: { income: DEFAULT_CATS.income.slice(), expense: DEFAULT_CATS.expense.slice() }, updatedAt: 0 };
   }
 
   function unionNames(a, b) {
@@ -39,6 +39,8 @@
     out.duas = (s && Array.isArray(s.duas)) ? s.duas : [];
     out.entries = (s && Array.isArray(s.entries)) ? s.entries : [];
     out.defaults = (s && Array.isArray(s.defaults)) ? s.defaults : [];
+    out.people = (s && Array.isArray(s.people)) ? s.people : [];
+    out.profile = (s && s.profile && typeof s.profile.info === 'string') ? s.profile : { info: '', updatedAt: 0 };
     out.cats = {
       income: unionNames(DEFAULT_CATS.income, s && s.cats && s.cats.income),
       expense: unionNames(DEFAULT_CATS.expense, s && s.cats && s.cats.expense)
@@ -128,7 +130,7 @@
       note: o.note || '', full: !!o.full, createdAt: now, updatedAt: now
     };
     loan.txs.push(tx);
-    logIt(loan, o.kind === 'pay' ? 'pay' : 'add', (o.kind === 'pay' ? 'শোধ ' : 'ঋণ যোগ ') + U.formatTaka(o.amount, true));
+    logIt(loan, o.kind, (o.kind === 'waive' ? 'মওকুফ ' : o.kind === 'pay' ? 'শোধ ' : 'ঋণ যোগ ') + U.formatTaka(o.amount, true) + (o.kind === 'waive' && o.note ? ' — কারণ: ' + o.note : ''));
     if (o.dueDate) loan.dueDate = o.dueDate;
     touch(loan);
     save();
@@ -236,6 +238,9 @@
     out.duas = mergeById(local.duas, remote.duas, mergeDua);
     out.entries = mergeById(local.entries, remote.entries, null);
     out.defaults = mergeById(local.defaults, remote.defaults, null);
+    out.people = mergeById(local.people, remote.people, null);
+    var lp = local.profile || { updatedAt: 0 }, rp = remote.profile || { updatedAt: 0 };
+    out.profile = (rp.updatedAt || 0) > (lp.updatedAt || 0) ? rp : (local.profile || { info: '', updatedAt: 0 });
     out.cats = {
       income: unionNames(local.cats && local.cats.income, remote.cats && remote.cats.income),
       expense: unionNames(local.cats && local.cats.expense, remote.cats && remote.cats.expense)
@@ -384,7 +389,7 @@
     if (bal <= 0) return [];
     var inst = planInstallments(loan);
     if (!inst) return [{ idx: 1, n: 1, date: loan.dueDate, amount: bal }];
-    var paid = liveTxs(loan).filter(function (t) { return t.kind === 'pay' && (t.createdAt || 0) >= (loan.plan.at || 0); })
+    var paid = liveTxs(loan).filter(function (t) { return (t.kind === 'pay' || t.kind === 'waive') && (t.createdAt || 0) >= (loan.plan.at || 0); })
       .reduce(function (a, t) { return a + t.amount; }, 0);
     var out = [];
     inst.forEach(function (it) {
@@ -487,6 +492,47 @@
       free: income - committed, over: income - committed < 0, defs: defs };
   }
 
+  /* ---------- আমার তথ্য ও সংরক্ষিত ব্যক্তি (একবার লিখলেই মনে থাকে) ---------- */
+  function getProfile() { return state.profile.info || ''; }
+  function setProfile(info) {
+    info = (info || '').trim();
+    if (info === (state.profile.info || '')) return;
+    state.profile = { info: info, updatedAt: Date.now() };
+    save();
+  }
+  function peopleList(witness) {
+    return state.people.filter(function (p) { return !p.deleted && !!p.w === !!witness; })
+      .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+  }
+  function findPerson(name, witness) {
+    name = (name || '').trim().toLowerCase();
+    if (!name) return null;
+    var list = peopleList(witness);
+    for (var i = 0; i < list.length; i++) if ((list[i].name || '').trim().toLowerCase() === name) return list[i];
+    return null;
+  }
+  /* আগের তথ্য থাকলে নতুন (খালি নয় এমন) তথ্য দিয়ে হালনাগাদ, না থাকলে যোগ */
+  function rememberPerson(o, witness) {
+    var name = (o.name || '').trim();
+    if (!name) return null;
+    var cur = findPerson(name, witness), now = Date.now();
+    if (cur) {
+      var ch = false;
+      ['contact', 'addr'].forEach(function (k) {
+        var v = (o[k] || '').trim();
+        if (v && v !== cur[k]) { cur[k] = v; ch = true; }
+      });
+      if (ch) { cur.updatedAt = now; save(true); }
+      return cur;
+    }
+    var p = { id: U.newId(), name: name, contact: (o.contact || '').trim(), addr: (o.addr || '').trim(), w: !!witness, updatedAt: now, deleted: false };
+    state.people.push(p); save(true); return p;
+  }
+  function deletePerson(id) {
+    state.people.forEach(function (p) { if (p.id === id) { p.deleted = true; p.updatedAt = Date.now(); } });
+    save();
+  }
+
   var api = {
     setStorage: setStorage, onChange: onChange, load: load, save: save,
     getState: getState, replaceState: replaceState, balance: balance, liveTxs: liveTxs,
@@ -496,6 +542,7 @@
     liveDuas: liveDuas, getDua: getDua, createDua: createDua, updateDua: updateDua, deleteDua: deleteDua,
     duaCount: duaCount, setDuaCount: setDuaCount, bumpDua: bumpDua, duaLastDays: duaLastDays,
     cats: cats, addCat: addCat, addEntry: addEntry, deleteEntry: deleteEntry, allEntries: allEntries,
+    getProfile: getProfile, setProfile: setProfile, peopleList: peopleList, findPerson: findPerson, rememberPerson: rememberPerson, deletePerson: deletePerson,
     logIt: logIt, planInstallments: planInstallments, remainingInstallments: remainingInstallments, setPlan: setPlan, schedule: schedule, monthTotal: monthTotal,
     liveDefaults: liveDefaults, defaultsFor: defaultsFor, addDefault: addDefault, changeDefault: changeDefault, deleteDefault: deleteDefault, forecast: forecast,
     rangeFor: rangeFor, shiftAnchor: shiftAnchor, report: report, totalBalance: totalBalance, LOAN_CAT: LOAN_CAT
