@@ -97,7 +97,7 @@
     var now = Date.now();
     var loan = {
       id: U.newId(), name: o.name, contact: o.contact || '', dir: o.dir,
-      createdAt: now, updatedAt: now, dueDate: o.dueDate, mode: o.mode || 'full',
+      createdAt: now, updatedAt: now, termsAt: now, dueDate: o.dueDate, mode: o.mode || 'full',
       remind: o.remind == null ? 1 : o.remind, eventId: null, contract: null,
       deleted: false, calDirty: true,
       txs: [{
@@ -115,6 +115,7 @@
     var loan = getLoan(id);
     if (!loan) return null;
     Object.keys(patch).forEach(function (k) { loan[k] = patch[k]; });
+    if ('dueDate' in patch || 'mode' in patch || 'plan' in patch) loan.termsAt = Date.now();
     if (!('contract' in patch)) logIt(loan, 'edit', 'ঋণের তথ্য সম্পাদনা' + ('plan' in patch ? ' (কিস্তির পরিকল্পনা)' : ''));
     touch(loan);
     save();
@@ -131,7 +132,7 @@
     };
     loan.txs.push(tx);
     logIt(loan, o.kind, (o.kind === 'waive' ? 'মওকুফ ' : o.kind === 'pay' ? 'শোধ ' : 'ঋণ যোগ ') + U.formatTaka(o.amount, true) + (o.kind === 'waive' && o.note ? ' — কারণ: ' + o.note : ''));
-    if (o.dueDate) loan.dueDate = o.dueDate;
+    if (o.dueDate) { loan.dueDate = o.dueDate; loan.termsAt = Date.now(); }
     touch(loan);
     save();
     return tx;
@@ -428,12 +429,12 @@
     if (!loan) return null;
     var bal = balance(loan);
     if (!(monthly > 0) || monthly >= bal || !first) {
-      if (loan.plan) { loan.plan = null; logIt(loan, 'plan', 'কিস্তির পরিকল্পনা বন্ধ — একবারে শোধ'); touch(loan); save(); }
+      if (loan.plan) { loan.plan = null; loan.termsAt = Date.now(); logIt(loan, 'plan', 'কিস্তির পরিকল্পনা বন্ধ — একবারে শোধ'); touch(loan); save(); }
       return loan;
     }
     var n = Math.ceil(bal / monthly);
     loan.plan = { n: n, first: first, total: bal, monthly: monthly, at: Date.now(), base: paidSum(loan) };
-    loan.dueDate = U.addMonths(first, n - 1);
+    loan.dueDate = U.addMonths(first, n - 1); loan.termsAt = Date.now();
     logIt(loan, 'plan', (changed ? 'মাসিক কিস্তি বদল: ' : 'মাসিক কিস্তি ঠিক: ') + U.formatTaka(monthly, true) + ' করে ' + n + ' মাস');
     touch(loan); save();
     return loan;
@@ -530,7 +531,7 @@
     var ni = info === undefined ? (state.profile.info || '') : String(info || '').trim();
     var np = phone === undefined ? (state.profile.phone || '') : String(phone || '').trim();
     if (ni === (state.profile.info || '') && np === (state.profile.phone || '')) return;
-    state.profile = { info: ni, phone: np, updatedAt: Date.now() };
+    state.profile = { info: ni, phone: np, name: state.profile.name || '', updatedAt: Date.now() };
     save();
   }
   function peopleList(witness) {
@@ -566,7 +567,92 @@
     save();
   }
 
+  /* ---------- অপর পক্ষের সাথে শেয়ার (লিংক দিয়ে আদান-প্রদান) ---------- */
+  function getMyName() { return state.profile.name || ''; }
+  function setMyName(n) {
+    n = (n || '').trim();
+    if (n === (state.profile.name || '')) return;
+    state.profile = { info: state.profile.info || '', phone: state.profile.phone || '', name: n, updatedAt: Date.now() };
+    save(true);
+  }
+  function sharedPayload(id, myName) {
+    var loan = getLoan(id);
+    if (!loan) return null;
+    if (!loan.share) loan.share = { id: U.newId() + U.newId(), peer: '', sentAt: 0, recvAt: 0 };
+    return {
+      v: 1, sid: loan.share.id, from: myName, dir: loan.dir, createdAt: loan.createdAt,
+      txs: loan.txs,
+      log: (loan.log || []).map(function (e) { return { id: e.id, at: e.at, by: e.by === 'আমি' ? myName : e.by, kind: e.kind, text: e.text }; }),
+      terms: { dueDate: loan.dueDate, mode: loan.mode, plan: loan.plan || null, at: loan.termsAt || loan.updatedAt || 0 },
+      contract: loan.contract ? {
+        senderInfo: (loan.contract.myInfo || '') + (loan.contract.myPhone ? ', মোবাইল ' + loan.contract.myPhone : ''),
+        otherInfo: loan.contract.otherInfo || '', medium: loan.contract.medium, interest: loan.contract.interest,
+        w1: loan.contract.w1 || '', w2: loan.contract.w2 || '', extra: loan.contract.extra || '',
+        amount: loan.contract.amount, date: loan.contract.date, dueDate: loan.contract.dueDate, mode: loan.contract.mode, createdAt: loan.contract.createdAt
+      } : null
+    };
+  }
+  function markSent(id) { var l = getLoan(id); if (l && l.share) { l.share.sentAt = Date.now(); save(true); } }
+  function findByShare(sid) {
+    for (var i = 0; i < state.loans.length; i++) if (state.loans[i].share && state.loans[i].share.id === sid) return state.loans[i];
+    return null;
+  }
+  function txSum(txs) {
+    return txs.filter(function (t) { return !t.deleted; }).reduce(function (a, t) { return a + (t.kind === 'add' ? t.amount : -t.amount); }, 0);
+  }
+  /* গ্রহণের আগে কী কী বদলাবে তা দেখানো */
+  function previewShare(p) {
+    var local = findByShare(p.sid);
+    if (!local) return { kind: 'new', hasContract: !!p.contract, myDir: p.dir === 'given' ? 'taken' : 'given', balance: txSum(p.txs), txs: p.txs.filter(function (t) { return !t.deleted; }), from: p.from };
+    var byId = {}; local.txs.forEach(function (t) { byId[t.id] = t; });
+    var changes = [];
+    p.txs.forEach(function (t) {
+      var c = byId[t.id];
+      if (!c) { if (!t.deleted) changes.push({ type: 'new', tx: t }); }
+      else if ((t.updatedAt || 0) > (c.updatedAt || 0) && t.deleted && !c.deleted) changes.push({ type: 'del', tx: t });
+    });
+    var termsNew = !!(p.terms && (p.terms.at || 0) > (local.termsAt || 0) && (p.terms.dueDate !== local.dueDate || p.terms.mode !== local.mode || JSON.stringify(p.terms.plan) !== JSON.stringify(local.plan || null)));
+    var have = {}; (local.log || []).forEach(function (e) { have[e.id] = 1; });
+    var newLog = (p.log || []).filter(function (e) { return !have[e.id]; }).length;
+    var after = txSum(mergeTxs(local.txs, p.txs));
+    return { kind: 'update', contractNew: !!(p.contract && !local.contract), loan: local, changes: changes, termsNew: termsNew, terms: p.terms, newLog: newLog, balanceBefore: balance(local), balanceAfter: after, from: p.from, dir: local.dir };
+  }
+  /* অপর পক্ষের চুক্তিপত্র আমার দিক থেকে সাজানো: আমি = ঋণদাতা/গ্রহীতার অপর অংশ */
+  function mapContract(c, label) {
+    if (!c) return null;
+    return { myInfo: state.profile.info || c.otherInfo || '', myPhone: state.profile.phone || '', otherInfo: c.senderInfo || '', medium: c.medium, interest: c.interest,
+      w1: c.w1, w2: c.w2, extra: c.extra, amount: c.amount, date: c.date, dueDate: c.dueDate, mode: c.mode, createdAt: c.createdAt || Date.now(), received: true };
+  }
+  function mapLog(log, myName) {
+    return (log || []).map(function (e) { return { id: e.id, at: e.at, by: (myName && e.by === myName) ? 'আমি' : e.by, kind: e.kind, text: e.text }; });
+  }
+  function applyShare(p, myName, label) {
+    var now = Date.now(), local = findByShare(p.sid);
+    if (!local) {
+      local = {
+        id: U.newId(), name: (label || p.from || 'অপর পক্ষ').trim(), contact: '', dir: p.dir === 'given' ? 'taken' : 'given',
+        createdAt: now, updatedAt: now, termsAt: (p.terms && p.terms.at) || now, dueDate: p.terms.dueDate, mode: p.terms.mode || 'full', remind: 1,
+        eventId: null, contract: mapContract(p.contract), deleted: false, calDirty: true, plan: p.terms.plan || null,
+        txs: JSON.parse(JSON.stringify(p.txs)), log: mapLog(p.log, myName),
+        share: { id: p.sid, peer: p.from, sentAt: 0, recvAt: now }
+      };
+      state.loans.push(local);
+    } else {
+      local.txs = mergeTxs(local.txs, p.txs);
+      local.log = mergeById(local.log || [], mapLog(p.log, myName), null).sort(function (a, b) { return a.at - b.at; });
+      if (p.terms && (p.terms.at || 0) > (local.termsAt || 0)) {
+        local.dueDate = p.terms.dueDate; local.mode = p.terms.mode; local.plan = p.terms.plan || null; local.termsAt = p.terms.at;
+      }
+      if (!local.contract && p.contract) local.contract = mapContract(p.contract);
+      local.share.peer = p.from; local.share.recvAt = now; local.deleted = false;
+      touch(local);
+    }
+    save();
+    return local;
+  }
+
   var api = {
+    getMyName: getMyName, setMyName: setMyName, sharedPayload: sharedPayload, markSent: markSent, previewShare: previewShare, applyShare: applyShare, findByShare: findByShare,
     setStorage: setStorage, onChange: onChange, load: load, save: save,
     getState: getState, replaceState: replaceState, balance: balance, liveTxs: liveTxs,
     getLoan: getLoan, liveLoans: liveLoans, createLoan: createLoan, updateLoan: updateLoan,

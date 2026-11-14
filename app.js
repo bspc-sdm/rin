@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v9';
+  var BUILD = 'rin-v11';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -313,7 +313,7 @@
   function txLabel(l, t) {
     var w = dirWords(l.dir);
     if (t.kind === 'add') return w.addTx;
-    if (t.kind === 'waive') return 'মওকুফ করলাম';
+    if (t.kind === 'waive') return l.dir === 'given' ? 'মওকুফ করলাম' : 'মওকুফ পেলাম';
     return t.full ? w.payFull : w.payTx;
   }
 
@@ -343,6 +343,8 @@
       html += '<a class="linkcard" href="#/schedule">' + ic('cal', 24, '#1F5C4A', 2) + '<div class="mid"><b>মাসে ' + U.formatTaka(S.planMonthly(l.plan)) + ' • ' + bn(l.plan.n) + ' মাস' + (nx ? ' • পরের কিস্তি ' + U.formatTaka(nx.amount) : '') + '</b><small>' + (nx ? U.formatDate(nx.date) + ' • ' : '') + 'বাকি ' + bn(ri.length) + 'টি কিস্তি</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
         '<a class="btn outline small" href="#/plan/' + h(l.id) + '">মাসিক কিস্তি কমান / বাড়ান</a>';
     }
+    var shNote = l.share ? ((l.share.peer ? h(l.share.peer) + '-এর সাথে শেয়ার করা' : 'শেয়ার করা হয়েছে') + ((l.updatedAt || 0) > (l.share.sentAt || 0) + 1000 ? ' • নতুন পরিবর্তন পাঠানো হয়নি' : ' • সব পাঠানো আছে')) : 'অপর পক্ষও একই হিসাব দেখতে পাবে';
+    html += '<a class="linkcard" href="#/share/' + h(l.id) + '">' + ic('share', 24, '#1F5C4A', 2) + '<div class="mid"><b>' + (l.share ? 'শেয়ার করা হিসাব' : 'অপর পক্ষের সাথে শেয়ার করুন') + '</b><small>' + shNote + '</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     html += '<a class="linkcard" href="#/log/' + h(l.id) + '">' + ic('edit', 24, '#1F5C4A', 2) + '<div class="mid"><b>এডিট হিস্টোরি</b><small>' + bn((l.log || []).length) + 'টি পরিবর্তন লেখা আছে</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     html += '<div class="sec-h"><h2>লেনদেনের ইতিহাস</h2></div>';
     html += txs.map(function (t) {
@@ -1050,6 +1052,91 @@
     });
   }
 
+
+  /* ---------- শেয়ার: লিংক পাঠানো ও গ্রহণ ---------- */
+  var impPayload = null, lastLink = '', lastLinkId = '';
+  function appBase() { return location.origin + location.pathname; }
+  function vShare(id) {
+    var l = S.getLoan(id);
+    if (!l) { go('#/'); return; }
+    if (!draft) draft = { name: S.getMyName() };
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/loan/' + h(id) + '" aria-label="ফিরে যান">' + ic('back') + '</a><h1>শেয়ার করুন</h1></div>' +
+      '<div class="note-box">অপর পক্ষকে একটি লিংক পাঠাবেন। সে খুলে "গ্রহণ করুন" চাপলে একই হিসাব তার অ্যাপেও আসবে। পরে যে-ই কিছু বদলাবে, নতুন লিংক পাঠালে অন্যজন কী বদলেছে দেখে গ্রহণ করবে। এডিট হিস্টোরিতে কে কতবার বদলেছে দেখা যাবে।</div>' +
+      '<div class="card"><h3>কী শেয়ার হয়</h3><p>নাম, টাকার লেনদেন, শোধের তারিখ ও কিস্তি, মওকুফ, এডিট হিস্টোরি, আর চুক্তিপত্র লেখা থাকলে সেটাও (অপর পক্ষের কাছে প্রথমবার পৌঁছালে)।</p>' +
+      '<h3>কী শেয়ার হয় না</h3><p>যোগাযোগ নম্বর, আয়-ব্যয়, ডিফল্ট আয়, দোয়া ও রিমাইন্ডার। এগুলো শুধু আপনার কাছে থাকে।</p></div>' +
+      '<div class="field"><label for="sh-name">আপনার নাম (অপর পক্ষ এটাই দেখবে)</label><input type="text" id="sh-name" value="' + h(draft.name) + '" autocomplete="off">' + errHtml('name') + '</div>';
+    if (l.share) {
+      html += '<div class="card"><div class="kv"><span>অপর পক্ষ</span><span>' + h(l.share.peer || 'এখনো গ্রহণ করেনি') + '</span></div>' +
+        '<div class="kv"><span>শেষ পাঠানো</span><span>' + (l.share.sentAt ? fmtTime(l.share.sentAt) : 'পাঠানো হয়নি') + '</span></div>' +
+        '<div class="kv"><span>শেষ পাওয়া</span><span>' + (l.share.recvAt ? fmtTime(l.share.recvAt) : 'এখনো নেই') + '</span></div></div>';
+    }
+    if (lastLink && lastLinkId === id) html += '<div class="field"><label for="sh-link">লিংক (কপি করে যেকোনো জায়গায় পাঠাতে পারেন)</label><textarea id="sh-link" rows="3" readonly>' + h(lastLink) + '</textarea></div>';
+    html += '<p class="hint">এই লিংকে হিসাবের তথ্য আছে। শুধু যাকে পাঠাতে চান, তাকেই পাঠান।</p>' +
+      '</div><div class="bottom-bar"><button class="btn" data-act="share-send" data-arg="' + h(id) + '">' + ic('share', 18, '#fff', 2.2) + (l.share ? ' সর্বশেষ আপডেট পাঠান' : ' লিংক পাঠান') + '</button></div>';
+    render(html);
+  }
+  function shareSend(id) {
+    var nm = ((document.getElementById('sh-name') || {}).value || '').trim();
+    if (!nm) { draft = { name: '', errors: { name: 'আপনার নাম লিখুন' } }; vShare(id); return; }
+    S.setMyName(nm);
+    var payload = S.sharedPayload(id, nm);
+    if (!payload) return;
+    U.packObj(payload).then(function (code) {
+      var url = appBase() + '#/import/' + code;
+      lastLink = url; lastLinkId = id; S.markSent(id); afterChange();
+      var title = 'ঋণের হিসাব';
+      if (navigator.share) {
+        navigator.share({ title: title, text: nm + ' আপনার সাথে একটি হিসাব শেয়ার করেছে। লিংক খুলে "গ্রহণ করুন" চাপুন:', url: url }).catch(function () { /* বাতিল */ });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () { toast('লিংক কপি হয়েছে, এখন পাঠিয়ে দিন'); }, function () { toast('নিচের লিংকটি কপি করে পাঠান'); });
+      } else toast('নিচের লিংকটি কপি করে পাঠান');
+      draft = { name: nm }; vShare(id);
+    }).catch(function () { toast('লিংক বানানো গেল না'); });
+  }
+  function txRow(t, dir) {
+    var add = t.kind === 'add', waive = t.kind === 'waive';
+    var lbl = add ? (dir === 'taken' ? 'ঋণ নিলাম' : 'ঋণ দিলাম') : waive ? (dir === 'given' ? 'মওকুফ করলাম' : 'মওকুফ পেলাম') : (dir === 'taken' ? 'শোধ দিলাম' : 'ফেরত পেলাম');
+    return '<div class="tx"><div class="mid"><b>' + lbl + '</b><small>' + U.formatDate(t.date) + (t.note && t.note !== 'প্রথম ঋণ' && t.note !== 'প্রথম ঋণ দিলাম' ? ' • ' + h(t.note) : '') + '</small></div>' +
+      '<span class="amt" style="color:' + (add ? '#8C1D18' : '#16453A') + '">' + (add ? '+ ' : '− ') + U.formatTaka(t.amount) + '</span></div>';
+  }
+  function vImport(code) {
+    render('<div class="screen"><div class="empty">হিসাব খোলা হচ্ছে…</div></div>');
+    U.unpackObj(code).then(function (p) {
+      if (!p || p.v !== 1 || !p.sid || !p.txs || !p.terms) throw new Error('bad');
+      impPayload = p;
+      var pv = S.previewShare(p), me = S.getMyName();
+      var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/" aria-label="ফিরে যান">' + ic('back') + '</a><h1>শেয়ার করা হিসাব</h1></div>';
+      if (pv.kind === 'new') {
+        var tk = pv.myDir === 'taken';
+        html += '<div class="hero" style="padding:14px 16px;gap:2px"><span style="font-size:13px">' + h(p.from) + ' আপনার সাথে একটি হিসাব শেয়ার করেছে</span>' +
+          '<b style="font-size:26px">' + U.formatTaka(pv.balance) + '</b><span style="font-size:13px">' + (tk ? 'এখন আপনি দেবেন (আমি দেব)' : 'এখন আপনি পাবেন (আমি পাব)') + ' • শোধের তারিখ ' + U.formatDate(p.terms.dueDate) + '</span></div>' +
+          (pv.hasContract ? '<div class="note-box">চুক্তিপত্রও পাঠানো হয়েছে। গ্রহণ করলে ঋণের পাতায় দেখতে ও পিডিএফ করতে পারবেন।</div>' : '') +
+          '<div class="field"><label for="imp-name">তালিকায় যে নামে থাকবে</label><input type="text" id="imp-name" value="' + h(p.from) + '" autocomplete="off"></div>' +
+          '<div class="sec-h"><h2>লেনদেন</h2></div>' + pv.txs.map(function (t) { return txRow(t, pv.myDir); }).join('');
+      } else {
+        html += '<div class="hero" style="padding:14px 16px;gap:2px"><span style="font-size:13px">' + h(p.from) + ' কিছু বদল পাঠিয়েছে • ' + h(pv.loan.name) + '</span>' +
+          '<b style="font-size:26px">' + U.formatTaka(pv.balanceAfter) + '</b><span style="font-size:13px">গ্রহণ করলে বাকি হবে (এখন ' + U.formatTaka(pv.balanceBefore) + ')</span></div>';
+        if (pv.contractNew) html += '<div class="note-box">চুক্তিপত্র পাঠানো হয়েছে। গ্রহণ করলে ঋণের পাতায় দেখতে পাবেন।</div>';
+        if (!pv.changes.length && !pv.termsNew && !pv.contractNew) html += '<div class="empty">নতুন কোনো বদল নেই। আপনার কাছে সবই আগে থেকে আছে।</div>';
+        else {
+          html += '<div class="sec-h"><h2>কী কী বদলেছে</h2></div>' + pv.changes.map(function (c) {
+            return (c.type === 'del' ? '<div class="note-box">মুছে ফেলেছে:</div>' : '') + txRow(c.tx, pv.dir);
+          }).join('');
+          if (pv.termsNew) html += '<div class="note-box">শোধের তারিখ বা কিস্তির নিয়ম বদলেছে: শোধ ' + U.formatDate(pv.terms.dueDate) + (pv.terms.plan ? ' • মাসে ' + U.formatTaka(S.planMonthly(pv.terms.plan)) : '') + '</div>';
+        }
+      }
+      html += '</div><div class="bottom-bar"><a class="btn outline" href="#/">বাতিল</a>' + ((pv.kind === 'new' || pv.changes.length || pv.termsNew || pv.newLog || pv.contractNew) ? '<button class="btn" data-act="imp-accept">গ্রহণ করুন</button>' : '') + '</div>';
+      render(html);
+    }).catch(function () {
+      render('<div class="screen"><div class="title-row"><a class="back" href="#/" aria-label="ফিরে যান">' + ic('back') + '</a><h1>শেয়ার করা হিসাব</h1></div><div class="warn-box">লিংকটি ঠিক নেই বা অসম্পূর্ণ। পুরো লিংকটি কপি করে আবার চেষ্টা করুন।</div></div>');
+    });
+  }
+  function impAccept() {
+    if (!impPayload) return;
+    var nm = document.getElementById('imp-name'), l = S.applyShare(impPayload, S.getMyName(), nm ? nm.value : '');
+    impPayload = null; afterChange(); toast('হিসাব গ্রহণ করা হয়েছে'); go('#/loan/' + l.id);
+  }
+
   /* ---------- সিঙ্ক চালু রাখা ---------- */
   var syncTimer = null;
   function scheduleSync() {
@@ -1167,6 +1254,8 @@
       draft.monthly = String(Math.min(v, bal) / 100); draft.errors = null; vPlan(current.p[1]);
     },
     'plan-save': function (t) { planSave(t.getAttribute('data-arg')); },
+    'share-send': function (t) { shareSend(t.getAttribute('data-arg')); },
+    'imp-accept': function () { impAccept(); },
     'do-update': function () { doUpdate(); },
     'check-update': function () { checkUpdate(true); },
     'sch-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vSchedule(); },
@@ -1241,6 +1330,8 @@
     else if (current.name === 'entry') vEntry();
     else if (current.name === 'dua') { if (p[1] === 'lib') vDuaLib(); else if (p[1] === 'new') vDuaForm(null, p[2] === 'sample'); else if (p[1] === 'edit') vDuaForm(p[2]); else vDua(); }
     else if (current.name === 'settings') vSettings();
+    else if (current.name === 'share') vShare(p[1]);
+    else if (current.name === 'import') vImport(p.slice(1).join('/'));
     else if (current.name === 'plan') vPlan(p[1]);
     else if (current.name === 'parties') vParties();
     else if (current.name === 'waive') vWaive(p[1]);
