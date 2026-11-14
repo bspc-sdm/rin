@@ -820,5 +820,7 @@
   }
 
   route();
-  if (G.configured() && localStorage.getItem('rin_signed_in')) waitGoogle(function () { G.syncAll(false); });
+  if (G.configured() && localStorage.getItem('rin_signed_in')) {
+    if (G.redirectMode()) G.syncAll(false); else waitGoogle(function () { G.syncAll(false); });
+  }
 })();

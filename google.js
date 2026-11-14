@@ -46,9 +46,77 @@
     });
   }
 
+
+  /* ---------- রিডাইরেক্ট লগিন (ইনস্টল করা অ্যাপে পপআপ কাজ করে না) ---------- */
+  function isStandalone() {
+    try { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+    catch (e) { return false; }
+  }
+  function redirectMode() { return isStandalone() || localStorage.getItem('rin_mode') === 'redirect'; }
+  function redirectUri() { return new URL('./', location.href).href; }
+
+  function saveTok() {
+    try { localStorage.setItem('rin_tok', JSON.stringify({ v: tok.value, exp: tok.exp, d: granted.drive, c: granted.cal })); } catch (e) { /* ignore */ }
+  }
+  function loadSavedTok() {
+    try {
+      var t = JSON.parse(localStorage.getItem('rin_tok') || 'null');
+      if (t && t.v && t.exp > Date.now()) { tok.value = t.v; tok.exp = t.exp; granted.drive = t.d !== false; granted.cal = t.c !== false; }
+    } catch (e) { /* ignore */ }
+  }
+
+  function redirectLogin(prompt) {
+    var st = Math.random().toString(36).slice(2);
+    localStorage.setItem('rin_oauth_state', st);
+    localStorage.setItem('rin_return', location.hash || '#/');
+    var q = 'client_id=' + encodeURIComponent(CFG.CLIENT_ID) +
+      '&redirect_uri=' + encodeURIComponent(redirectUri()) +
+      '&response_type=token&include_granted_scopes=true' +
+      '&scope=' + encodeURIComponent(DRIVE_SCOPE + ' ' + CAL_SCOPE) +
+      '&state=' + st + '&prompt=' + prompt;
+    location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
+    return new Promise(function () { /* পেজ বদলে যাচ্ছে */ });
+  }
+
+  /* লগিন শেষে গুগল যে টোকেন সহ ফেরত পাঠায় সেটা পড়া (অ্যাপের রাউটারের আগেই চলে) */
+  function consumeRedirect() {
+    var hs = location.hash || '';
+    if (hs.indexOf('access_token=') < 0 && hs.indexOf('error=') < 0) return;
+    var prm = new URLSearchParams(hs.replace(/^#/, ''));
+    var ret = localStorage.getItem('rin_return') || '#/';
+    var okState = prm.get('state') && prm.get('state') === localStorage.getItem('rin_oauth_state');
+    localStorage.removeItem('rin_oauth_state');
+    history.replaceState(null, '', location.pathname + location.search + ret);
+    if (!okState) return;
+    if (prm.get('access_token')) {
+      tok.value = prm.get('access_token');
+      tok.exp = Date.now() + Math.max(60, (+prm.get('expires_in') || 3600) - 90) * 1000;
+      var sc = prm.get('scope') || '';
+      granted.drive = sc.indexOf('drive.appdata') >= 0;
+      granted.cal = sc.indexOf('calendar.events') >= 0;
+      localStorage.setItem('rin_signed_in', '1');
+      localStorage.setItem('rin_mode', 'redirect');
+      saveTok();
+    } else {
+      status.state = 'needlogin';
+      status.msg = 'লগিন সম্পূর্ণ হয়নি (' + (prm.get('error') || 'error') + ')';
+    }
+  }
+  loadSavedTok();
+  consumeRedirect();
+
   function getToken(interactive) {
     if (tok.value && Date.now() < tok.exp) return Promise.resolve(tok.value);
     if (!configured()) return Promise.reject(new Error('not_configured'));
+    if (redirectMode()) {
+      if (interactive) return redirectLogin('select_account');
+      var last = +(localStorage.getItem('rin_silent_at') || 0);
+      if (localStorage.getItem('rin_signed_in') && Date.now() - last > 10 * 60000 && navigator.onLine) {
+        localStorage.setItem('rin_silent_at', String(Date.now()));
+        return redirectLogin('none');
+      }
+      return Promise.reject(new Error('interaction_required'));
+    }
     if (!googleReady()) return Promise.reject(new Error('google_not_loaded'));
     initClient();
     return new Promise(function (resolve, reject) {
@@ -273,13 +341,13 @@
   function signOut() {
     var t = tok.value;
     tok.value = null; tok.exp = 0;
-    localStorage.removeItem('rin_signed_in');
+    localStorage.removeItem('rin_signed_in'); localStorage.removeItem('rin_tok');
     if (t && googleReady()) { try { google.accounts.oauth2.revoke(t, function () { /* done */ }); } catch (e) { /* ignore */ } }
     setStatus('signedout');
   }
 
   root.RinGoogle = {
     configured: configured, syncAll: syncAll, signOut: signOut, onStatus: onStatus,
-    getStatus: getStatus, createTestReminder: createTestReminder, getToken: getToken
+    getStatus: getStatus, createTestReminder: createTestReminder, getToken: getToken, redirectMode: redirectMode
   };
 })(window);
