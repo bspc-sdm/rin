@@ -149,7 +149,52 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  /* ---- শেয়ার লিংকের জন্য ডাটা ছোট করে লেখা/পড়া ---- */
+  function b64u(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function unb64u(str) {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    var bin = atob(str), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function utf8Bytes(text) {
+    var bin = unescape(encodeURIComponent(text)), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function utf8Text(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return decodeURIComponent(escape(bin));
+  }
+  function pipe(bytes, stream) {
+    var w = stream.writable.getWriter();
+    w.write(bytes); w.close();
+    return new Response(stream.readable).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+  }
+  function packObj(obj) {
+    var bytes = utf8Bytes(JSON.stringify(obj));
+    if (typeof CompressionStream !== 'undefined' && typeof Response !== 'undefined') {
+      try { return pipe(bytes, new CompressionStream('deflate-raw')).then(function (z) { return 'z' + b64u(z); }, function () { return 'j' + b64u(bytes); }); } catch (e) { /* সাধারণ পদ্ধতি */ }
+    }
+    return Promise.resolve('j' + b64u(bytes));
+  }
+  function unpackObj(code) {
+    try {
+      var type = code.charAt(0), bytes = unb64u(code.slice(1));
+      if (type === 'z') return pipe(bytes, new DecompressionStream('deflate-raw')).then(function (b) { return JSON.parse(utf8Text(b)); });
+      if (type === 'j') return Promise.resolve(JSON.parse(utf8Text(bytes)));
+    } catch (e) { return Promise.reject(e); }
+    return Promise.reject(new Error('bad'));
+  }
+
   var api = {
+    packObj: packObj, unpackObj: unpackObj,
     toBn: toBn, fromBn: fromBn, parseAmount: parseAmount, formatTaka: formatTaka,
     words: words, takaInWords: takaInWords, MONTHS: MONTHS,
     todayISO: todayISO, formatDate: formatDate, formatDateShort: formatDateShort,
