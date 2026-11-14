@@ -8,6 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
+  var BUILD = 'rin-v6';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -32,6 +33,27 @@
   function ic(name, size, color, w) {
     return '<svg width="' + (size || 22) + '" height="' + (size || 22) + '" viewBox="0 0 24 24" fill="none" stroke="' + (color || 'currentColor') +
       '" stroke-width="' + (w || 2.2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[name] + '</svg>';
+  }
+
+
+  /* ---------- অ্যাপের ভেতর থেকে আপডেট ---------- */
+  function checkUpdate(manual) {
+    return fetch('sw.js', { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
+      var m = t.match(/CACHE = '([^']+)'/);
+      ui.update = !!(m && m[1] !== BUILD);
+      if (manual) toast(ui.update ? 'নতুন সংস্করণ পাওয়া গেছে' : 'আপনার অ্যাপ সর্বশেষ সংস্করণে আছে');
+      if (current.name === 'home') vHome(); else if (current.name === 'settings') vSettings();
+    }).catch(function () { if (manual) toast('এখন চেক করা গেল না, ইন্টারনেট দেখুন'); });
+  }
+  function doUpdate() {
+    toast('আপডেট হচ্ছে…');
+    var jobs = [];
+    if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+    Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+  }
+  function updateBanner() {
+    return ui.update ? '<button class="btn" data-act="do-update" style="margin-bottom:4px">⬆ নতুন সংস্করণ এসেছে — এখানে চেপে আপডেট করুন</button>' : '';
   }
 
   /* ---------- ছোট সাহায্যকারী ---------- */
@@ -127,7 +149,7 @@
     var settled = all.filter(function (l) { return !isOpenLoan(l); })
       .sort(function (a, b) { return b.updatedAt - a.updatedAt; }).slice(0, 8);
     var html = '<div class="screen">' +
-      '<div class="top"><div><span class="sub">আসসালামু আলাইকুম</span><h1>আমার ঋণ</h1></div>' + chipHtml() + '</div>' +
+      '<div class="top"><div><span class="sub">আসসালামু আলাইকুম</span><h1>আমার ঋণ</h1></div>' + chipHtml() + '</div>' + updateBanner() +
       '<div class="hero"><div><div class="lbl">' + w.total + '</div><div class="big">' + U.formatTaka(sum.total) + '</div></div>' +
       '<div class="grid2"><div class="mini"><span>মেয়াদ পার</span><b>' + U.formatTaka(sum.overdue) + '</b></div>' +
       '<div class="mini"><span>আগামী ৭ দিনে</span><b>' + U.formatTaka(sum.next7) + '</b></div></div></div>' +
@@ -466,7 +488,8 @@
         }).join('') + '</div>';
     }
     if (installPrompt) html += '<div class="card"><h3>অ্যাপ ইনস্টল</h3><p>হোম স্ক্রিনে অ্যাপের মতো রাখতে ইনস্টল করুন।</p><button class="btn small" data-act="install">ইনস্টল করুন</button></div>';
-    html += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ৪ • v3.0</span></div>' +
+    html += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ৪ • ' + h(BUILD.replace('rin-', '')) + '</span></div>' + updateBanner() +
+      '<button class="btn outline small" data-act="check-update">আপডেট আছে কিনা দেখুন</button>' +
       '<div class="kv"><span>ঋণের সংখ্যা</span><span>' + bn(S.liveLoans().length) + 'টি</span></div></div></div>' + nav('settings');
     render(html);
   }
@@ -996,6 +1019,8 @@
     'del-person': function (t) { S.deletePerson(t.getAttribute('data-arg')); afterChange(); vSettings(); },
     'waive-full': function (t) { collectWaive(); draft.full = t.getAttribute('data-arg') === '1'; vWaive(current.p[1]); },
     'waive-go': function (t) { waiveGo(t.getAttribute('data-arg')); },
+    'do-update': function () { doUpdate(); },
+    'check-update': function () { checkUpdate(true); },
     'sch-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vSchedule(); },
     'fc-prev': function () { fc.key = U.addMonths(fc.key + '-01', -1).slice(0, 7); vForecast(); },
     'fc-next': function () { fc.key = U.addMonths(fc.key + '-01', 1).slice(0, 7); vForecast(); },
@@ -1076,7 +1101,7 @@
   });
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installPrompt = e; if (current.name === 'settings') vSettings(); });
   window.addEventListener('online', scheduleSync);
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') scheduleSync(); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { scheduleSync(); checkUpdate(false); } });
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* অফলাইন ক্যাশ ছাড়াই চলবে */ });
 
@@ -1088,6 +1113,7 @@
   }
 
   route();
+  checkUpdate(false);
   if (G.configured() && localStorage.getItem('rin_signed_in')) {
     if (G.redirectMode()) G.syncAll(false); else waitGoogle(function () { G.syncAll(false); });
   }
