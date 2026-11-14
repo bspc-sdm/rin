@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v12';
+  var BUILD = 'rin-v14';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -333,7 +333,7 @@
       '<div>' + ic('bell', 18, '#fff', 2) + '<span>' + h(bal <= 0 ? calLine : remindText(l.remind) + ' • ' + calLine) + '</span></div></div></div>';
     if (st.kind !== 'settled') html += '<div><span class="chip ' + c.cls + '">' + h(c.text) + '</span></div>';
     html += phone
-      ? '<a class="btn" href="' + h(phone) + '">' + ic('phone', 18, '#fff', 2.2) + ' ' + (l.dir === 'taken' ? 'পাওনাদারকে কল করুন' : 'দেনাদারকে কল করুন') + ' • ' + h(U.toBn(phone.slice(4))) + '</a>'
+      ? '<div class="calllbl">' + (l.dir === 'taken' ? 'পাওনাদারকে কল করুন' : 'দেনাদারকে কল করুন') + '</div><a class="callrow" href="' + h(phone) + '" aria-label="কল করুন"><span>' + h(U.toBn(phone.slice(4))) + '</span>' + ic('phone', 22, '#1F5C4A', 2.2) + '</a>'
       : '<a class="btn outline small" href="#/edit/' + h(l.id) + '">' + ic('phone', 18, 'currentColor', 2.2) + ' কল দিতে মোবাইল নম্বর যোগ করুন</a>';
     html += l.contract
       ? '<a class="linkcard" href="#/contract/' + h(l.id) + '">' + ic('file', 24, '#1F5C4A', 2) + '<div class="mid"><b>ঋণ চুক্তিপত্র</b><small>' + U.formatDate(l.contract.date) + (l.contract.w1 || l.contract.w2 ? ' • সাক্ষী আছে' : '') + '</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>'
