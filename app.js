@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v14';
+  var BUILD = 'rin-v15';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -250,8 +250,8 @@
     if (!loan) {
       html += '<div class="field"><label for="f-amount">টাকার পরিমাণ</label><input type="text" inputmode="decimal" class="amount" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
         '<div class="row2"><div class="field"><label for="f-date">ঋণের তারিখ</label><input type="date" id="f-date" value="' + h(draft.date) + '"></div>' +
-        '<div class="field"><label for="f-due">শোধের তারিখ</label><input type="date" id="f-due" value="' + h(draft.due) + '"></div></div>';
-    } else {
+        (draft.mode === 'full' ? '<div class="field"><label for="f-due">শোধের তারিখ</label><input type="date" id="f-due" value="' + h(draft.due) + '"></div>' : '') + '</div>';
+    } else if (draft.mode === 'full') {
       html += '<div class="field"><label for="f-due">শোধের তারিখ</label><input type="date" id="f-due" value="' + h(draft.due) + '"></div>';
     }
     html += errHtml('due') +
@@ -277,17 +277,20 @@
     collectLoan();
     var errors = {}, amount = null;
     if (!draft.name.trim()) errors.name = 'নাম লিখুন';
-    if (!draft.due) errors.due = 'শোধের তারিখ দিন';
+    if (draft.mode === 'full' && !draft.due) errors.due = 'শোধের তারিখ দিন';
+    if (draft.mode === 'partial' && !draft.due) draft.due = draft.first || U.addMonths(U.todayISO(), 1);
     if (!editId) {
       amount = U.parseAmount(draft.amount);
       if (isNaN(amount) || amount <= 0) errors.amount = 'সঠিক টাকার পরিমাণ লিখুন';
-      if (draft.due && draft.date && draft.due < draft.date) errors.due = 'শোধের তারিখ ঋণের তারিখের আগে হতে পারে না';
+      if (draft.mode === 'full' && draft.due && draft.date && draft.due < draft.date) errors.due = 'শোধের তারিখ ঋণের তারিখের আগে হতে পারে না';
       if (!draft.date) errors.date = 'ঋণের তারিখ দিন';
     }
     var totalNow = editId ? S.balance(S.getLoan(editId)) : amount;
     var pm = draft.mode === 'partial' && String(draft.monthly || '').trim() ? U.parseAmount(draft.monthly) : null;
     var wantPlan = pm != null && pm > 0 && pm < totalNow;
-    if (pm != null && (isNaN(pm) || pm <= 0)) errors.n = 'মাসিক টাকার সঠিক অঙ্ক লিখুন';
+    if (draft.mode === 'partial' && pm == null) errors.n = 'মাসে কত টাকা দেবেন তা লিখুন, তাহলে শোধের তারিখ নিজেই বসে যাবে';
+    else if (draft.mode === 'partial' && !isNaN(pm) && pm >= totalNow) errors.n = 'মাসিক টাকা মোট টাকার চেয়ে কম হতে হবে';
+    else if (pm != null && (isNaN(pm) || pm <= 0)) errors.n = 'মাসিক টাকার সঠিক অঙ্ক লিখুন';
     else if (wantPlan && Math.ceil(totalNow / pm) > 120) errors.n = 'মাস ১২০-এর বেশি হয়ে যাচ্ছে, মাসিক অঙ্ক বাড়ান';
     else if (wantPlan && !draft.first) errors.n = 'প্রথম কিস্তির তারিখ দিন';
     if (Object.keys(errors).length) { draft.errors = errors; vLoanForm(editId); window.scrollTo(0, 0); return; }
@@ -759,6 +762,20 @@
       return '<div><i class="' + (x.n >= d.target ? 'ok' : '') + '" style="height:' + hgt + 'px"></i><span>' + bn(x.n) + '</span></div>';
     }).join('');
   }
+  var dayTimer = null;
+  function dayLeftText() {
+    var now = new Date(), end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    var m = Math.max(0, Math.floor((end - now) / 60000)), hh = Math.floor(m / 60), mm = m % 60;
+    return 'দিন শেষ হতে ' + bn(hh) + ' ঘণ্টা ' + bn(mm) + ' মিনিট বাকি';
+  }
+  function startDayTimer() {
+    if (dayTimer) clearInterval(dayTimer);
+    dayTimer = setInterval(function () {
+      var el = document.getElementById('day-left');
+      if (!el) { clearInterval(dayTimer); dayTimer = null; return; }
+      el.textContent = dayLeftText();
+    }, 30000);
+  }
   function vDua() {
     var list = S.liveDuas(), today = U.todayISO();
     var html = '<div class="screen"><div class="top"><div><span class="sub">প্রতিদিনের আমল</span><h1>দোয়া</h1></div>' + chipHtml() + '</div>';
@@ -770,6 +787,11 @@
     var sel = localStorage.getItem('rin_dua'), d = S.getDua(sel) || list[0];
     localStorage.setItem('rin_dua', d.id);
     var n = S.duaCount(d, today), pct = duaPercent(d, n);
+    html += '<div class="card"><div class="kv"><span>আজকের আমল</span><span id="day-left">' + dayLeftText() + '</span></div>' + list.map(function (x) {
+      var c = S.duaCount(x, today), ok = c >= x.target;
+      return '<button class="kv" style="width:100%;background:none;border:0;padding:6px 0;text-align:left;font:inherit;color:inherit" data-act="dua-pick" data-arg="' + h(x.id) + '"><span>' + (x.id === d.id ? '▶ ' : '') + h(x.title) + '</span><span style="font-weight:600;color:' + (ok ? '#1F5C4A' : 'inherit') + '">' + bn(c) + ' / ' + bn(x.target) + (ok ? ' ✓' : '') + '</span></button>';
+    }).join('') + '</div>';
+    startDayTimer();
     html += '<div class="duasel"><select id="dua-sel" aria-label="দোয়া বাছুন">' + list.map(function (x) {
       return '<option value="' + h(x.id) + '"' + (x.id === d.id ? ' selected' : '') + '>' + h(x.title) + '</option>';
     }).join('') + '</select><a class="btn small" href="#/dua/lib">' + ic('plus', 16, '#fff', 2.6) + 'যোগ</a></div>' +
@@ -1157,6 +1179,7 @@
     soon: function (t, e) { e.preventDefault(); toast('এটা পরের ধাপে আসছে'); },
     dir: function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vHome(); },
     'form-dir': function (t) { collectLoan(); draft.dir = t.getAttribute('data-arg'); vLoanForm(); },
+    'dua-pick': function (t) { localStorage.setItem('rin_dua', t.getAttribute('data-arg')); vDua(); },
     'form-mode': function (t) { collectLoan(); draft.mode = t.getAttribute('data-arg'); vLoanForm(current.name === 'edit' ? current.p[1] : null); },
     'form-remind': function (t) { collectLoan(); draft.remind = +t.getAttribute('data-arg'); vLoanForm(current.name === 'edit' ? current.p[1] : null); },
     'form-contract': function () { collectLoan(); draft.contract = !draft.contract; vLoanForm(); },
