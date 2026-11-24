@@ -8,8 +8,8 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v19';
-  var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
+  var BUILD = 'rin-v20';
+  var ui = { stab: 'g', dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
   var installPrompt = null;
@@ -530,32 +530,38 @@
     var loggedIn = st === 'ok' || st === 'syncing' || st === 'idle';
     var html = '<div class="screen"><div class="top"><div><span class="sub">ব্যবস্থাপনা</span><h1>সেটিং</h1></div></div>';
     if (!cfg) html += '<div class="warn-box">গুগল লগিনের Client ID বসানো হয়নি। config.js ফাইলে বসাতে হবে (SETUP.md এর ধাপ ২)। ততক্ষণ সব ডাটা শুধু এই ফোনে থাকবে।</div>';
-    html += '<div class="card"><h3>গুগল সংযোগ</h3><div class="kv"><span>অবস্থা</span><span>' + h(txt) + '</span></div>' +
+    var P = { g: '', m: '', b: '', a: '' };
+    P.g += '<div class="card"><h3>গুগল সংযোগ</h3><div class="kv"><span>অবস্থা</span><span>' + h(txt) + '</span></div>' +
       '<div class="kv"><span>শেষ সিঙ্ক</span><span>' + h(fmtTime(s.last)) + '</span></div>' +
       (s.calMsg ? '<div class="warn-box">' + h(s.calMsg) + '</div>' : '') +
       '<p>ডাটা আপনার গুগল ড্রাইভের গোপন ফোল্ডারে থাকে, আর রিমাইন্ডার গুগল ক্যালেন্ডারে বসে।</p>' +
       '<button class="btn small" data-act="sync-now"' + (cfg ? '' : ' disabled') + '>' + (loggedIn ? 'এখনই সিঙ্ক করুন' : 'গুগল দিয়ে লগিন ও সিঙ্ক') + '</button>' +
       (st !== 'signedout' ? '<button class="btn danger small" data-act="logout">লগআউট (ফোনের ডাটা থাকবে)</button>' : '') + '</div>' +
       '<div class="card"><h3>রিমাইন্ডার পরীক্ষা</h3><p>ক্যালেন্ডারে একটা পরীক্ষামূলক ইভেন্ট বসবে, ৫ মিনিট পরে ফোনে নোটিফিকেশন আসা উচিত। না এলে ক্যালেন্ডার অ্যাপের নোটিফিকেশন চালু আছে কি না দেখুন।</p>' +
-      '<button class="btn outline small" data-act="test-remind"' + (cfg ? '' : ' disabled') + '>পরীক্ষামূলক রিমাইন্ডার পাঠান</button></div>' +
-      '<div class="card"><h3>ব্যাকআপ</h3><p>নিজের কাছেও একটা কপি রাখুন। ডাউনলোড করা ফাইল থেকে যেকোনো সময় ফিরিয়ে আনা যায়।</p>' +
+      '<button class="btn outline small" data-act="test-remind"' + (cfg ? '' : ' disabled') + '>পরীক্ষামূলক রিমাইন্ডার পাঠান</button></div>';
+    P.b += '<div class="card"><h3>ব্যাকআপ</h3><p>নিজের কাছেও একটা কপি রাখুন। ডাউনলোড করা ফাইল থেকে যেকোনো সময় ফিরিয়ে আনা যায়।</p>' +
       '<button class="btn outline small" data-act="backup">ব্যাকআপ ডাউনলোড (JSON)</button>' +
       '<label class="btn outline small" style="cursor:pointer">ব্যাকআপ থেকে ফিরিয়ে আনুন<input type="file" id="restore-file" accept=".json,application/json" class="hidden"></label></div>';
-    html += '<div class="card"><h3>আমার নাম ও ঠিকানা</h3><p>একবার লিখে রাখলে চুক্তিপত্রে নিজে থেকে বসবে। লেখা শেষে বাইরে চাপলেই সেভ হয়ে যায়।</p>' +
+    P.m += '<div class="card"><h3>আমার নাম ও ঠিকানা</h3><p>একবার লিখে রাখলে চুক্তিপত্রে নিজে থেকে বসবে। লেখা শেষে বাইরে চাপলেই সেভ হয়ে যায়।</p>' +
       '<textarea id="s-me" rows="2" placeholder="নাম, গ্রাম/এলাকা, জেলা">' + h(S.getProfile()) + '</textarea>' +
       '<label for="s-phone" style="margin-top:8px;display:block">আমার মোবাইল নম্বর</label><input type="text" id="s-phone" inputmode="tel" value="' + h(S.getProfilePhone()) + '" placeholder="০১৭XXXXXXXX" autocomplete="off">' + pickBtn('me') + '</div>';
     var plist = S.peopleList(false).concat(S.peopleList(true));
     if (plist.length) {
-      html += '<div class="card"><h3>সংরক্ষিত ব্যক্তি (' + bn(plist.length) + ')</h3><p>ঋণ বা চুক্তিপত্রে একবার লিখলেই এখানে জমে, পরের বার নাম লিখতে গেলে নিজে থেকে আসে।</p>' +
+      P.m += '<div class="card"><h3>সংরক্ষিত ব্যক্তি (' + bn(plist.length) + ')</h3><p>ঋণ বা চুক্তিপত্রে একবার লিখলেই এখানে জমে, পরের বার নাম লিখতে গেলে নিজে থেকে আসে।</p>' +
         plist.map(function (x) {
           return '<div class="kv"><span>' + h(x.name) + (x.w ? ' <small>(সাক্ষী)</small>' : '') + (x.contact ? '<br><small>' + h(x.contact) + '</small>' : '') + '</span>' +
             '<button class="x" data-act="del-person" data-arg="' + h(x.id) + '" aria-label="মুছুন">' + ic('x', 18, 'currentColor', 2.4) + '</button></div>';
         }).join('') + '</div>';
     }
-    if (installPrompt) html += '<div class="card"><h3>অ্যাপ ইনস্টল</h3><p>হোম স্ক্রিনে অ্যাপের মতো রাখতে ইনস্টল করুন।</p><button class="btn small" data-act="install">ইনস্টল করুন</button></div>';
-    html += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ৪ • ' + h(BUILD.replace('rin-', '')) + '</span></div>' + updateBanner() +
+    if (installPrompt) P.a += '<div class="card"><h3>অ্যাপ ইনস্টল</h3><p>হোম স্ক্রিনে অ্যাপের মতো রাখতে ইনস্টল করুন।</p><button class="btn small" data-act="install">ইনস্টল করুন</button></div>';
+    P.a += '<div class="card"><h3>অ্যাপ সম্পর্কে</h3><div class="kv"><span>সংস্করণ</span><span>ধাপ ৪ • ' + h(BUILD.replace('rin-', '')) + '</span></div>' +
       '<button class="btn outline small" data-act="check-update">আপডেট আছে কিনা দেখুন</button>' +
-      '<div class="kv"><span>ঋণের সংখ্যা</span><span>' + bn(S.liveLoans().length) + 'টি</span></div></div></div>' + nav('settings');
+      '<div class="kv"><span>ঋণের সংখ্যা</span><span>' + bn(S.liveLoans().length) + 'টি</span></div></div>';
+    var STABS = [['g', 'গুগল'], ['m', 'আমার তথ্য'], ['b', 'ব্যাকআপ'], ['a', 'অ্যাপ']];
+    if (!P[ui.stab]) ui.stab = 'g';
+    html += updateBanner() + '<div class="seg c4">' + STABS.map(function (t) {
+      return '<button data-act="set-tab" data-arg="' + t[0] + '" class="' + (ui.stab === t[0] ? 'active' : '') + '">' + t[1] + '</button>';
+    }).join('') + '</div>' + P[ui.stab] + '</div>' + nav('settings');
     render(html);
   }
 
@@ -1268,6 +1274,7 @@
     'fin-next': function () { fin.anchor = S.shiftAnchor(fin.kind, fin.anchor, 1); vMoney(); },
     'fin-cv': function (t) { fin.cv = t.getAttribute('data-arg'); fin.allCats = false; vMoney(); },
     'fin-allcats': function () { fin.allCats = !fin.allCats; vMoney(); },
+    'set-tab': function (t) { ui.stab = t.getAttribute('data-arg'); vSettings(); window.scrollTo(0, 0); },
     'fin-tag': function (t) { fin.tag = t.getAttribute('data-arg') || ''; fin.allCats = false; fin.allList = false; vMoney(); },
     'fin-alllist': function () { fin.allList = !fin.allList; vMoney(); },
     'report-pdf': function () { reportPdf(); },
