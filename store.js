@@ -15,7 +15,7 @@
   var listeners = [];
 
   function emptyState() {
-    return { v: 2, loans: [], duas: [], entries: [], defaults: [], profile: { info: '', updatedAt: 0 }, people: [], cats: { income: DEFAULT_CATS.income.slice(), expense: DEFAULT_CATS.expense.slice() }, updatedAt: 0 };
+    return { v: 2, loans: [], duas: [], entries: [], defaults: [], tags: [], profile: { info: '', updatedAt: 0 }, people: [], cats: { income: DEFAULT_CATS.income.slice(), expense: DEFAULT_CATS.expense.slice() }, updatedAt: 0 };
   }
 
   function unionNames(a, b) {
@@ -39,6 +39,7 @@
     out.duas = (s && Array.isArray(s.duas)) ? s.duas : [];
     out.entries = (s && Array.isArray(s.entries)) ? s.entries : [];
     out.defaults = (s && Array.isArray(s.defaults)) ? s.defaults : [];
+    out.tags = unionNames([], s && s.tags);
     out.people = (s && Array.isArray(s.people)) ? s.people : [];
     out.profile = (s && s.profile && typeof s.profile.info === 'string') ? s.profile : { info: '', updatedAt: 0 };
     out.cats = {
@@ -239,6 +240,7 @@
     out.duas = mergeById(local.duas, remote.duas, mergeDua);
     out.entries = mergeById(local.entries, remote.entries, null);
     out.defaults = mergeById(local.defaults, remote.defaults, null);
+    out.tags = unionNames(local.tags, remote.tags);
     out.people = mergeById(local.people, remote.people, null);
     var lp = local.profile || { updatedAt: 0 }, rp = remote.profile || { updatedAt: 0 };
     out.profile = (rp.updatedAt || 0) > (lp.updatedAt || 0) ? rp : (local.profile || { info: '', updatedAt: 0 });
@@ -314,9 +316,17 @@
     for (var i = 0; i < list.length; i++) if (list[i] === name) return name;
     list.push(name); save(); return name;
   }
+  function tagList() { return state.tags || []; }
+  function addTag(name) {
+    name = (name || '').trim().replace(/^#/, '');
+    if (!name) return null;
+    state.tags = state.tags || [];
+    if (state.tags.indexOf(name) < 0) { state.tags.push(name); save(); }
+    return name;
+  }
   function addEntry(o) {
     var now = Date.now();
-    var e = { id: U.newId(), type: o.type, cat: o.cat, amount: o.amount, date: o.date, note: o.note || '', createdAt: now, updatedAt: now, deleted: false };
+    var e = { id: U.newId(), type: o.type, cat: o.cat, amount: o.amount, date: o.date, note: o.note || '', tags: (o.tags || []).slice(), createdAt: now, updatedAt: now, deleted: false };
     state.entries.push(e); save(); return e;
   }
   function deleteEntry(id) {
@@ -361,8 +371,8 @@
     return Object.keys(m).map(function (k) { return { name: k, total: m[k] }; })
       .sort(function (a, b) { return b.total - a.total; });
   }
-  function report(from, to) {
-    var items = allEntries().filter(function (e) { return e.date >= from && e.date <= to; })
+  function report(from, to, tag) {
+    var items = allEntries().filter(function (e) { return e.date >= from && e.date <= to && (!tag || (e.tags || []).indexOf(tag) >= 0); })
       .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0); });
     var inc = 0, exp = 0;
     items.forEach(function (e) { if (e.type === 'income') inc += e.amount; else exp += e.amount; });
@@ -660,7 +670,7 @@
     summary: summary, mergeStates: mergeStates, applyMerged: applyMerged,
     liveDuas: liveDuas, getDua: getDua, createDua: createDua, updateDua: updateDua, deleteDua: deleteDua,
     duaCount: duaCount, setDuaCount: setDuaCount, bumpDua: bumpDua, duaLastDays: duaLastDays,
-    cats: cats, addCat: addCat, addEntry: addEntry, deleteEntry: deleteEntry, allEntries: allEntries,
+    cats: cats, addCat: addCat, tagList: tagList, addTag: addTag, addEntry: addEntry, deleteEntry: deleteEntry, allEntries: allEntries,
     getProfile: getProfile, getProfilePhone: getProfilePhone, setProfile: setProfile, peopleList: peopleList, findPerson: findPerson, rememberPerson: rememberPerson, deletePerson: deletePerson,
     logIt: logIt, planInstallments: planInstallments, remainingInstallments: remainingInstallments, setPlan: setPlan, setMonthlyPlan: setMonthlyPlan, planMonthly: planMonthly, schedule: schedule, monthTotal: monthTotal,
     liveDefaults: liveDefaults, defaultsFor: defaultsFor, addDefault: addDefault, changeDefault: changeDefault, deleteDefault: deleteDefault, forecast: forecast,

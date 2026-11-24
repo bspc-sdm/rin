@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v16';
+  var BUILD = 'rin-v19';
   var ui = { dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -562,7 +562,7 @@
   /* =====================================================
      ধাপ ৩: আয়-ব্যয় ও রিপোর্ট
      ===================================================== */
-  var fin = { kind: 'month', anchor: U.todayISO(), from: '', to: '', cv: 'expense', allCats: false, allList: false };
+  var fin = { kind: 'month', anchor: U.todayISO(), from: '', to: '', cv: 'expense', allCats: false, allList: false, tag: '' };
   var FIN_TABS = [['day', 'দৈনিক'], ['week', 'সাপ্তাহিক'], ['month', 'মাসিক'], ['year', 'বাৎসরিক'], ['custom', 'কাস্টম']];
 
   function signed(p) { return p < 0 ? '− ' + U.formatTaka(-p) : U.formatTaka(p); }
@@ -578,7 +578,7 @@
   }
   function entryRow(e) {
     var inc = e.type === 'income';
-    var sub = U.formatDateShort(e.date) + (e.note ? ' • ' + h(e.note) : '');
+    var sub = U.formatDateShort(e.date) + (e.note ? ' • ' + h(e.note) : '') + ((e.tags && e.tags.length) ? ' • ' + e.tags.map(function (t) { return '#' + h(t); }).join(' ') : '');
     return '<div class="tx"><div class="ic ' + (inc ? 't-green' : 't-red') + '">' + ic(inc ? 'plus' : 'minus', 18, 'currentColor', 2.6) + '</div>' +
       '<div class="mid"><b>' + h(e.cat) + '</b><small>' + sub + (e.derived ? ' • ঋণের হিসাব থেকে' : '') + '</small></div>' +
       '<span class="amt" style="color:' + (inc ? '#16453A' : '#8C1D18') + '">' + (inc ? '+ ' : '− ') + U.formatTaka(e.amount) + '</span>' +
@@ -593,12 +593,29 @@
     }).join('');
   }
 
+  function forecastCard() {
+    var today = U.todayISO(), nk = U.addMonths(today.slice(0, 7) + '-01', 1).slice(0, 7), f = S.forecast(nk, today);
+    var head = '<div style="display:flex;justify-content:space-between;align-items:center"><b>আগামী মাসের পূর্বাভাস • ' + monthLabel(nk) + '</b>' + ic('chev', 18, '#5B635E', 2.4) + '</div>';
+    if (!f.defs.length) {
+      return '<a class="card" href="#/forecast" style="text-decoration:none;color:inherit;display:block">' + head +
+        '<p class="hint" style="margin:6px 0 0">নিয়মিত আয় (যেমন বেতন) ও খরচ যোগ করলে এখানে আগামী মাসের হিসাব দেখা যাবে।</p></a>';
+    }
+    var committed = Math.max(f.budget, f.spent) + f.loanDue, pct = f.income > 0 ? Math.min(100, Math.round(committed * 100 / f.income)) : 100;
+    return '<a class="card" href="#/forecast" style="text-decoration:none;color:inherit;display:block">' + head +
+      '<div class="kv"><span>প্রত্যাশিত আয়</span><span style="color:#16453A;font-weight:600">' + U.formatTaka(f.income) + '</span></div>' +
+      '<div class="kv"><span>নিয়মিত খরচ</span><span style="color:#8C1D18;font-weight:600">' + U.formatTaka(f.budget) + '</span></div>' +
+      '<div class="kv"><span>ঋণ শোধ</span><span style="color:#8C1D18;font-weight:600">' + U.formatTaka(f.loanDue) + '</span></div>' +
+      '<div class="kv"><span><b>' + (f.over ? 'ঘাটতি' : 'হাতে থাকবে') + '</b></span><span style="font-weight:700;color:' + (f.over ? '#8C1D18' : '#1F5C4A') + '">' + U.formatTaka(Math.abs(f.free)) + '</span></div>' +
+      '<div style="height:8px;background:#E4E8E5;border-radius:6px;overflow:hidden;margin-top:6px"><i style="display:block;height:100%;width:' + pct + '%;background:' + (f.over ? '#8C1D18' : '#1F5C4A') + ';border-radius:6px"></i></div>' +
+      '<small style="color:#5B635E">আয়ের ' + bn(pct) + '% আগেই ধরা আছে • বিস্তারিত দেখতে চাপুন</small></a>';
+  }
   function vMoney() {
-    var rng = finRange(), rep = S.report(rng.from, rng.to);
+    var rng = finRange(), rep = S.report(rng.from, rng.to, fin.tag);
     var html = '<div class="screen"><div class="top"><div><span class="sub">হিসাব</span><h1>আয়-ব্যয়</h1></div>' + chipHtml() + '</div>' +
       '<div class="hero"><div><div class="lbl">ব্যালেন্স (আয় − ব্যয়)</div><div class="big">' + signed(rep.balance) + '</div></div>' +
       '<div class="grid2"><div class="mini"><span>মোট আয়</span><b>' + U.formatTaka(rep.income) + '</b></div>' +
       '<div class="mini"><span>মোট ব্যয়</span><b>' + U.formatTaka(rep.expense) + '</b></div></div></div>' +
+      forecastCard() +
       '<div class="seg c5">' + FIN_TABS.map(function (t) {
         return '<button data-act="fin-kind" data-arg="' + t[0] + '" class="' + (fin.kind === t[0] ? 'active' : '') + '">' + t[1] + '</button>';
       }).join('') + '</div>';
@@ -609,6 +626,12 @@
       html += '<div class="period"><button data-act="fin-prev" aria-label="আগের">' + ic('back', 20, 'currentColor', 2.4) + '</button><b>' + h(rng.label) +
         '</b><button data-act="fin-next" aria-label="পরের"><span style="display:inline-flex;transform:rotate(180deg)">' + ic('back', 20, 'currentColor', 2.4) + '</span></button></div>';
     }
+    var tl = S.tagList();
+    if (tl.length) {
+      html += '<div class="pills" style="margin:4px 0">' + ['' ].concat(tl).map(function (t) {
+        return '<button class="pill ' + (fin.tag === t ? 'active' : '') + '" data-act="fin-tag" data-arg="' + h(t) + '">' + (t ? '#' + h(t) : 'সব ট্যাগ') + '</button>';
+      }).join('') + '</div>';
+    }
     var isEx = fin.cv === 'expense', list = isEx ? rep.exCats : rep.inCats, total = isEx ? rep.expense : rep.income;
     html += '<div class="seg c2"><button data-act="fin-cv" data-arg="expense" class="' + (isEx ? 'active red' : '') + '">ব্যয়ের খাত</button>' +
       '<button data-act="fin-cv" data-arg="income" class="' + (!isEx ? 'active' : '') + '">আয়ের খাত</button></div>';
@@ -618,6 +641,16 @@
       html += '<div class="bars">' + barsHtml(shown, total, isEx) +
         (list.length > 5 ? '<button class="linkbtn" data-act="fin-allcats">' + (fin.allCats ? 'কম দেখুন' : 'আরও দেখুন (আরও ' + bn(list.length - 5) + 'টি খাত)') + '</button>' : '') + '</div>';
     }
+    var fk = U.todayISO().slice(0, 7), fixed = S.defaultsFor(fk), fxEx = 0, fxIn = 0;
+    fixed.forEach(function (d) { if (d.type === 'income') fxIn += d.amount; else fxEx += d.amount; });
+    html += '<div class="card"><h3>নিয়মিত মাসিক আয়-ব্যয় (ফিক্সড)</h3>' +
+      (fixed.length ? fixed.map(function (d) {
+        return '<a class="kv" href="#/default/edit/' + h(d.id) + '/m" style="text-decoration:none;color:inherit"><span>' + h(d.name) + ' <small style="color:#5B635E">' + (d.type === 'income' ? 'আয়' : 'ব্যয়') + '</small></span><span style="font-weight:600;color:' + (d.type === 'income' ? '#16453A' : '#8C1D18') + '">' + U.formatTaka(d.amount) + '</span></a>';
+      }).join('') + '<div class="kv"><span><b>মাসে মোট নিয়মিত ব্যয়</b></span><span><b>' + U.formatTaka(fxEx) + '</b></span></div>' +
+        (fxIn ? '<div class="kv"><span><b>মাসে মোট নিয়মিত আয়</b></span><span><b>' + U.formatTaka(fxIn) + '</b></span></div>' : '')
+        : '<p class="hint" style="margin:4px 0">বাসা ভাড়া, বিল, কিস্তি বা বেতনের মতো যা প্রতি মাসে একই থাকে, তা একবার লিখে রাখুন।</p>') +
+      '<p class="hint" style="margin:6px 0">একবার লিখলে প্রতি মাসে নিজে থেকেই ধরা হবে, নতুন মাসে আবার লিখতে হবে না। অঙ্ক বদলালে শুধু বদলে দিন। অনিয়মিত খরচ নিচের "＋ ব্যয়" দিয়ে তারিখসহ লিখুন।</p>' +
+      '<div class="row2"><a class="btn outline small" href="#/default/new/expense/m">＋ নিয়মিত ব্যয়</a><a class="btn outline small" href="#/default/new/income/m">＋ নিয়মিত আয়</a></div></div>';
     html += '<div class="sec-h"><h2>লেনদেন (' + bn(rep.items.length) + 'টি)</h2><span>নতুন আগে</span></div>';
     if (!rep.items.length) html += '<div class="empty">এই সময়ে কোনো লেনদেন নেই। নিচের বাটন চেপে যোগ করুন।</div>';
     else {
@@ -625,8 +658,7 @@
       if (rep.items.length > 10) html += '<button class="linkbtn" data-act="fin-alllist">' + (fin.allList ? 'কম দেখুন' : 'সব ' + bn(rep.items.length) + 'টি দেখুন') + '</button>';
     }
     html += '<button class="btn outline small" style="margin-top:6px" data-act="report-pdf">' + ic('download', 18, 'currentColor', 2.2) + 'এই রিপোর্ট পিডিএফ</button>' +
-      '<a class="linkcard" href="#/forecast">' + ic('chart', 24, '#1F5C4A', 2) + '<div class="mid"><b>আগামী মাসের পূর্বাভাস</b><small>ডিফল্ট আয়-খরচ ও ঋণ শোধসহ</small></div>' + ic('chev', 18, '#5B635E', 2.4) + '</a>' +
-      '</div><div class="bottom-bar"><a class="btn" href="#/entry">' + ic('plus', 18, '#fff', 2.6) + ' নতুন আয় / ব্যয়</a></div>' + nav('money');
+      '</div><div class="bottom-bar"><a class="btn outline" href="#/entry/expense">＋ ব্যয়</a><a class="btn" href="#/entry/income">＋ আয়</a></div>' + nav('money');
     render(html);
   }
 
@@ -648,7 +680,7 @@
   }
   function reportPdf() {
     if (busy) return;
-    var rng = finRange(), rep = S.report(rng.from, rng.to);
+    var rng = finRange(), rep = S.report(rng.from, rng.to, fin.tag);
     busy = true; toast('রিপোর্ট তৈরি হচ্ছে…');
     C.htmlToPdf(reportHtml(rep, rng.label)).then(function (blob) {
       C.download(blob, ('আয়-ব্যয়-' + rng.from + '-' + rng.to + '.pdf')); toast('ডাউনলোড হয়েছে');
@@ -665,7 +697,7 @@
     });
   }
   function vEntry() {
-    if (!draft) draft = { type: 'expense', amount: '', cat: '', date: U.todayISO(), note: '', newCat: false };
+    if (!draft) draft = { type: current.p[1] === 'income' ? 'income' : 'expense', amount: '', cat: '', date: U.todayISO(), note: '', newCat: false, tags: [], newTag: false };
     var isEx = draft.type === 'expense', list = S.cats(draft.type);
     if (!draft.cat || list.indexOf(draft.cat) < 0) draft.cat = list[0];
     var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/money" aria-label="ফিরে যান">' + ic('back') + '</a><h1>নতুন ' + (isEx ? 'ব্যয়' : 'আয়') + '</h1></div>' +
@@ -674,10 +706,18 @@
       '<div class="field"><label for="f-amount">টাকার পরিমাণ</label><input type="text" inputmode="decimal" class="amount ' + (isEx ? 'red' : '') + '" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
       '<div class="field"><label for="e-cat">' + (isEx ? 'ব্যয়ের খাত' : 'আয়ের খাত') + '</label><select id="e-cat">' +
       list.map(function (c) { return '<option value="' + h(c) + '"' + (c === draft.cat ? ' selected' : '') + '>' + h(c) + '</option>'; }).join('') +
-      '<option value="__new">＋ নতুন খাত যোগ করুন…</option></select></div>';
+      '<option value="__new">＋ নতুন খাত যোগ করুন…</option></select>' + (draft.newCat ? '' : '<button class="linkbtn" data-act="entry-newcat">＋ নতুন খাত বানান</button>') + '</div>';
     if (draft.newCat) {
       html += '<div class="field"><label for="e-newcat">নতুন খাতের নাম</label><div class="newcat"><input type="text" id="e-newcat" autocomplete="off">' +
         '<button class="btn small" data-act="entry-addcat">যোগ</button></div>' + errHtml('cat') + '</div>';
+    }
+    html += '<div class="field"><span class="lbl">ট্যাগ (ঐচ্ছিক, একাধিক বাছা যায়)</span><div class="pills">' + S.tagList().map(function (t) {
+        var on = draft.tags.indexOf(t) >= 0;
+        return '<button class="pill ' + (on ? 'active' : '') + '" data-act="entry-tag" data-arg="' + h(t) + '">#' + h(t) + '</button>';
+      }).join('') + '<button class="pill" data-act="entry-newtag">＋ নতুন ট্যাগ</button></div></div>';
+    if (draft.newTag) {
+      html += '<div class="field"><label for="e-newtag">নতুন ট্যাগের নাম</label><div class="newcat"><input type="text" id="e-newtag" autocomplete="off" placeholder="যেমন: পরিবার, অফিস, জরুরি">' +
+        '<button class="btn small" data-act="entry-addtag">যোগ</button></div></div>';
     }
     html += '<div class="field"><label for="f-date">তারিখ</label><input type="date" id="f-date" value="' + h(draft.date) + '">' + errHtml('date') + '</div>' +
       '<div class="field"><label for="f-note">নোট (ঐচ্ছিক)</label><input type="text" id="f-note" value="' + h(draft.note) + '" autocomplete="off"></div>' +
@@ -691,7 +731,7 @@
     if (!draft.date) errors.date = 'তারিখ দিন';
     if (!draft.cat) errors.cat = 'খাত বেছে নিন';
     if (Object.keys(errors).length) { draft.errors = errors; vEntry(); return; }
-    S.addEntry({ type: draft.type, cat: draft.cat, amount: a, date: draft.date, note: draft.note.trim() });
+    S.addEntry({ type: draft.type, cat: draft.cat, amount: a, date: draft.date, note: draft.note.trim(), tags: draft.tags || [] });
     fin.kind = fin.kind === 'custom' ? 'custom' : fin.kind; fin.anchor = draft.date > U.todayISO() ? draft.date : (fin.kind === 'custom' ? fin.anchor : draft.date);
     afterChange(); toast('সেভ হয়েছে'); go('#/money');
   }
@@ -944,39 +984,41 @@
       '<div class="period"><button data-act="fc-prev" aria-label="আগের">' + ic('back', 20, 'currentColor', 2.4) + '</button><b>' + monthLabel(fc.key) +
       '</b><button data-act="fc-next" aria-label="পরের"><span style="display:inline-flex;transform:rotate(180deg)">' + ic('back', 20, 'currentColor', 2.4) + '</span></button></div>';
     if (!hasDefs) {
-      html += '<div class="empty">আগে ডিফল্ট আয় (যেমন বেতন) ও মাসিক খরচ যোগ করুন, তারপর পূর্বাভাস দেখা যাবে।</div>';
+      html += '<div class="empty">আগে নিয়মিত আয় (যেমন বেতন) ও মাসিক খরচ যোগ করুন, তারপর পূর্বাভাস দেখা যাবে।</div>';
     } else {
       var committed = Math.max(f.budget, f.spent) + f.loanDue, pct = f.income > 0 ? Math.min(100, Math.round(committed * 100 / f.income)) : 100;
       html += '<div class="hero' + (f.over ? ' redh' : '') + '"><div><div class="lbl">' + (f.over ? 'আয়ের চেয়ে ' + U.formatTaka(-f.free) + ' বেশি খরচ হয়ে যাচ্ছে!' : 'এই মাসে হাতে থাকবে (আনুমানিক)') + '</div><div class="big">' + U.formatTaka(f.over ? 0 : f.free) + '</div></div>' +
         '<div class="pbar"><i style="width:' + pct + '%"></i></div><div class="lbl">আয়ের ' + bn(pct) + '% আগেই ধরা আছে</div></div>' +
         '<div class="card"><div class="kv"><span>প্রত্যাশিত আয়</span><span>' + U.formatTaka(f.income) + '</span></div>' +
-        '<div class="kv"><span>মাসিক খরচ (ডিফল্ট)</span><span>' + U.formatTaka(f.budget) + '</span></div>' +
+        '<div class="kv"><span>নিয়মিত মাসিক খরচ</span><span>' + U.formatTaka(f.budget) + '</span></div>' +
         '<div class="kv"><span>ঋণ শোধ (সূচি অনুযায়ী)</span><span>' + U.formatTaka(f.loanDue) + '</span></div>' +
         '<div class="kv"><span>এ পর্যন্ত আসল খরচ</span><span style="color:' + (f.spent > f.budget ? '#8C1D18' : 'inherit') + '">' + U.formatTaka(f.spent) + '</span></div>' +
         (f.receive ? '<div class="kv"><span>ঋণ থেকে পাওনা আসবে (হিসাবের বাইরে)</span><span>' + U.formatTaka(f.receive) + '</span></div>' : '') + '</div>';
     }
-    html += '<div class="sec-h"><h2>ডিফল্ট আয় ও খরচ</h2></div>';
+    html += '<div class="sec-h"><h2>নিয়মিত (ফিক্সড) আয় ও খরচ</h2></div>';
     html += f.defs.length ? f.defs.map(function (d) {
       return '<div class="tx"><div class="mid"><b>' + h(d.name) + '</b><small>' + (d.type === 'income' ? 'আয়' : 'খরচ') + ' • ' + monthLabel(d.from) + ' থেকে</small></div>' +
         '<span class="amt" style="color:' + (d.type === 'income' ? '#16453A' : '#8C1D18') + '">' + U.formatTaka(d.amount) + '</span>' +
         '<a class="icon-btn" href="#/default/edit/' + h(d.id) + '" aria-label="বদলান">' + ic('edit', 18) + '</a>' +
         '<button class="x" data-act="del-default" data-arg="' + h(d.id) + '" aria-label="মুছুন">' + ic('x', 18, 'currentColor', 2.4) + '</button></div>';
     }).join('') : '<div class="empty">এই মাসের জন্য কিছু নেই।</div>';
-    html += '<p class="hint">অঙ্ক বদলালে শুধু নির্বাচিত মাস থেকে বদলাবে, আগের মাসের হিসাব ঠিক থাকবে।</p></div>' +
+    html += '<p class="hint">একবার লিখলে প্রতি মাসে নিজে থেকে চলবে, নতুন মাসে আবার লিখতে হবে না। অঙ্ক বদলালে শুধু নির্বাচিত মাস থেকে বদলাবে, আগের মাসের হিসাব ঠিক থাকবে।</p></div>' +
       '<div class="bottom-bar"><a class="btn outline" href="#/default/new/expense">＋ খরচ</a><a class="btn" href="#/default/new/income">＋ আয়</a></div>';
     render(html);
   }
-  function vDefault(mode, arg) {
+  function vDefault(mode, arg, from) {
     var d = null, today = U.todayISO();
     if (mode === 'edit') { S.getState().defaults.forEach(function (x) { if (x.id === arg && !x.deleted) d = x; }); if (!d) { go('#/forecast'); return; } }
     if (!draft) draft = d ? { type: d.type, name: d.name, amount: String(d.amount / 100), from: fc.key || today.slice(0, 7) }
       : { type: arg === 'income' ? 'income' : 'expense', name: '', amount: '', from: fc.key || U.addMonths(today.slice(0, 7) + '-01', 1).slice(0, 7) };
+    if (!draft.back) { draft.back = from === 'm' ? '#/money' : '#/forecast'; if (from === 'm' && !d) draft.from = today.slice(0, 7); }
     var isEx = draft.type === 'expense', list = S.cats(draft.type);
     if (!draft.name || (!d && list.indexOf(draft.name) < 0)) draft.name = list[0];
-    var html = '<div class="screen form"><div class="title-row"><a class="back" href="#/forecast" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (d ? 'অঙ্ক বদলান' : (isEx ? 'ডিফল্ট খরচ' : 'ডিফল্ট আয়')) + '</h1></div>';
+    var html = '<div class="screen form"><div class="title-row"><a class="back" href="' + h(draft.back) + '" aria-label="ফিরে যান">' + ic('back') + '</a><h1>' + (d ? 'অঙ্ক বদলান' : (isEx ? 'নিয়মিত খরচ' : 'নিয়মিত আয়')) + '</h1></div>';
     if (!d) html += '<div class="seg c2"><button data-act="def-type" data-arg="expense" class="' + (isEx ? 'active red' : '') + '">খরচ</button><button data-act="def-type" data-arg="income" class="' + (!isEx ? 'active' : '') + '">আয়</button></div>';
     html += '<div class="field"><label for="d-cat">খাত</label>' + (d ? '<input type="text" value="' + h(d.name) + '" disabled>' :
-      '<select id="d-cat">' + list.map(function (c) { return '<option value="' + h(c) + '"' + (c === draft.name ? ' selected' : '') + '>' + h(c) + '</option>'; }).join('') + '</select>') + '</div>' +
+      '<select id="d-cat">' + list.map(function (c) { return '<option value="' + h(c) + '"' + (c === draft.name ? ' selected' : '') + '>' + h(c) + '</option>'; }).join('') + '</select>' +
+        (draft.newCat ? '<div class="newcat" style="margin-top:8px"><input type="text" id="d-newcat" autocomplete="off" placeholder="নতুন খাতের নাম"><button class="btn small" data-act="def-addcat">যোগ</button></div>' : '<button class="linkbtn" data-act="def-newcat">＋ নতুন খাত বানান</button>')) + '</div>' +
       '<div class="field"><label for="f-amount">মাসে কত টাকা</label><input type="text" inputmode="decimal" class="amount ' + (isEx ? 'red' : '') + '" id="f-amount" value="' + h(draft.amount) + '" placeholder="৳ ০" autocomplete="off">' + errHtml('amount') + '</div>' +
       '<div class="field"><label for="d-from">কোন মাস থেকে কার্যকর</label><input type="month" id="d-from" value="' + h(draft.from) + '"></div>' +
       '</div><div class="bottom-bar"><button class="btn" data-act="save-default" data-arg="' + (d ? h(d.id) : '') + '">সেভ করুন</button></div>';
@@ -989,10 +1031,10 @@
   function saveDefault(id) {
     collectDefault();
     var a = U.parseAmount(draft.amount);
-    if (isNaN(a) || a <= 0) { draft.errors = { amount: 'সঠিক টাকার পরিমাণ লিখুন' }; vDefault(id ? 'edit' : 'new', id || draft.type); return; }
+    if (isNaN(a) || a <= 0) { draft.errors = { amount: 'সঠিক টাকার পরিমাণ লিখুন' }; vDefault(id ? 'edit' : 'new', id || draft.type, current.p[3]); return; }
     if (id) S.changeDefault(id, a, draft.from + '-01');
     else S.addDefault({ type: draft.type, name: draft.name, amount: a, from: draft.from });
-    fc.key = draft.from; afterChange(); toast('সেভ হয়েছে'); go('#/forecast');
+    var back = draft.back || '#/forecast'; fc.key = draft.from; afterChange(); toast('সেভ হয়েছে'); go(back);
   }
 
 
@@ -1226,6 +1268,7 @@
     'fin-next': function () { fin.anchor = S.shiftAnchor(fin.kind, fin.anchor, 1); vMoney(); },
     'fin-cv': function (t) { fin.cv = t.getAttribute('data-arg'); fin.allCats = false; vMoney(); },
     'fin-allcats': function () { fin.allCats = !fin.allCats; vMoney(); },
+    'fin-tag': function (t) { fin.tag = t.getAttribute('data-arg') || ''; fin.allCats = false; fin.allList = false; vMoney(); },
     'fin-alllist': function () { fin.allList = !fin.allList; vMoney(); },
     'report-pdf': function () { reportPdf(); },
     'entry-type': function (t) { collectEntry(); draft.type = t.getAttribute('data-arg'); draft.cat = ''; draft.newCat = false; vEntry(); },
@@ -1235,6 +1278,15 @@
       var added = S.addCat(draft.type, name);
       if (!added) { draft.errors = { cat: 'খাতের নাম লিখুন (ঋণ শোধ নামটি ব্যবহার করা যাবে না)' }; vEntry(); return; }
       draft.cat = added; draft.newCat = false; draft.errors = null; afterChange(); vEntry();
+    },
+    'entry-newcat': function () { collectEntry(); draft.newCat = true; vEntry(); },
+    'entry-tag': function (t) { collectEntry(); var n = t.getAttribute('data-arg'), i = draft.tags.indexOf(n); if (i >= 0) draft.tags.splice(i, 1); else draft.tags.push(n); vEntry(); },
+    'entry-newtag': function () { collectEntry(); draft.newTag = true; vEntry(); },
+    'entry-addtag': function () {
+      var el = document.getElementById('e-newtag'), n = S.addTag(el ? el.value : '');
+      collectEntry();
+      if (n && draft.tags.indexOf(n) < 0) draft.tags.push(n);
+      draft.newTag = false; afterChange(); vEntry();
     },
     'save-entry': function () { saveEntry(); },
     'del-entry': function (t) {
@@ -1309,7 +1361,14 @@
     'sch-dir': function (t) { ui.dir = t.getAttribute('data-arg'); localStorage.setItem('rin_dir', ui.dir); vSchedule(); },
     'fc-prev': function () { fc.key = U.addMonths(fc.key + '-01', -1).slice(0, 7); vForecast(); },
     'fc-next': function () { fc.key = U.addMonths(fc.key + '-01', 1).slice(0, 7); vForecast(); },
-    'def-type': function (t) { collectDefault(); draft.type = t.getAttribute('data-arg'); draft.name = ''; vDefault('new', draft.type); },
+    'def-newcat': function () { collectDefault(); draft.newCat = true; vDefault('new', draft.type, current.p[3]); },
+    'def-addcat': function () {
+      var el = document.getElementById('d-newcat'), n = S.addCat(draft.type, el ? el.value : '');
+      collectDefault();
+      if (n) { draft.name = n; draft.newCat = false; afterChange(); }
+      vDefault('new', draft.type, current.p[3]);
+    },
+    'def-type': function (t) { collectDefault(); draft.type = t.getAttribute('data-arg'); draft.name = ''; draft.newCat = false; vDefault('new', draft.type, current.p[3]); },
     'save-default': function (t) { saveDefault(t.getAttribute('data-arg') || null); },
     'del-default': function (t) {
       var id = t.getAttribute('data-arg');
@@ -1386,7 +1445,7 @@
     else if (current.name === 'schedule') vSchedule();
     else if (current.name === 'log') vLog(p[1]);
     else if (current.name === 'forecast') vForecast();
-    else if (current.name === 'default') vDefault(p[1], p[2]);
+    else if (current.name === 'default') vDefault(p[1], p[2], p[3]);
     else { current.name = 'home'; vHome(); }
   }
 
