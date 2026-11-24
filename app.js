@@ -8,7 +8,7 @@
   S.load();
 
   var root = document.getElementById('app');
-  var BUILD = 'rin-v20';
+  var BUILD = 'rin-v23';
   var ui = { stab: 'g', dir: localStorage.getItem('rin_dir') === 'given' ? 'given' : 'taken' };
   var current = { key: null, name: 'home', p: [] };
   var draft = null;
@@ -599,21 +599,61 @@
     }).join('');
   }
 
+  function spendSplit(rng, rep) {
+    var keys = [], k = rng.from.slice(0, 7) + '-01', last = rng.to.slice(0, 7);
+    while (k.slice(0, 7) <= last && keys.length < 36) { keys.push(k.slice(0, 7)); k = U.addMonths(k, 1); }
+    var names = {}, budget = 0;
+    keys.forEach(function (key) {
+      S.defaultsFor(key).forEach(function (d) { if (d.type === 'expense') { names[d.name] = 1; budget += d.amount; } });
+    });
+    var reg = 0, irr = 0, loan = 0;
+    rep.items.forEach(function (e) {
+      if (e.type !== 'expense') return;
+      if (e.cat === S.LOAN_CAT) loan += e.amount; else if (names[e.cat]) reg += e.amount; else irr += e.amount;
+    });
+    var nm = Object.keys(names);
+    if (!nm.length && !irr && !loan) return '';
+    var total = reg + irr + loan, pr = total ? Math.round(reg * 100 / total) : 0, pi = total ? Math.round(irr * 100 / total) : 0;
+    var showBudget = nm.length && (fin.kind === 'month' || fin.kind === 'year' || fin.kind === 'custom');
+    return '<div class="card"><h3>ব্যয় কোন ধরনের</h3>' +
+      '<div class="kv"><span>নিয়মিত খাতে' + (nm.length ? ' <small style="color:#5B635E">(' + nm.map(h).join(', ') + ')</small>' : '') + '</span><span style="font-weight:600">' + U.formatTaka(reg) + '</span></div>' +
+      (showBudget ? '<div class="kv"><span><small>নিয়মিত খরচ ধরা আছে</small></span><span><small>' + U.formatTaka(budget) + '</small></span></div>' : '') +
+      '<div class="kv"><span>অনিয়মিত খাতে</span><span style="font-weight:600">' + U.formatTaka(irr) + '</span></div>' +
+      (loan ? '<div class="kv"><span>ঋণ শোধ</span><span style="font-weight:600">' + U.formatTaka(loan) + '</span></div>' : '') +
+      '<div class="kv"><span><b>মোট ব্যয়</b></span><span><b>' + U.formatTaka(total) + '</b></span></div>' +
+      (total ? '<div style="display:flex;height:8px;border-radius:6px;overflow:hidden;background:#E4E8E5;margin-top:6px"><i style="width:' + pr + '%;background:#1F5C4A"></i><i style="width:' + pi + '%;background:#C98A1B"></i></div>' +
+        '<small style="color:#5B635E">সবুজ = নিয়মিত • হলুদ = অনিয়মিত</small>' : '') + '</div>';
+  }
+  function fixedCard() {
+    var fk = U.todayISO().slice(0, 7), fixed = S.defaultsFor(fk), exT = 0, inT = 0;
+    fixed.forEach(function (d) { if (d.type === 'income') inT += d.amount; else exT += d.amount; });
+    var btns = '<div class="row2" style="margin-top:8px"><a class="btn outline small" href="#/default/new/expense/m">＋ নিয়মিত ব্যয়</a><a class="btn outline small" href="#/default/new/income/m">＋ নিয়মিত আয়</a></div>';
+    function row(d) {
+      return '<a class="kv" href="#/default/edit/' + h(d.id) + '/m" style="text-decoration:none;color:inherit"><span>' + h(d.name) + '</span><span style="color:' + (d.type === 'income' ? '#16453A' : '#8C1D18') + '">' + U.formatTaka(d.amount) + '</span></a>';
+    }
+    var exs = fixed.filter(function (d) { return d.type === 'expense'; }), ins = fixed.filter(function (d) { return d.type === 'income'; });
+    if (!fixed.length) {
+      return '<div class="card"><h3>নিয়মিত আয়-ব্যয়ের তালিকা</h3><p class="hint" style="margin:4px 0">বাসা ভাড়া, বিল, বেতনের মতো যা প্রতি মাসে একই থাকে, তা একবার লিখে রাখুন। প্রতি মাসে নিজে থেকে ধরা হবে, আবার লিখতে হবে না।</p>' + btns + '</div>';
+    }
+    return '<div class="card"><h3>নিয়মিত আয়-ব্যয়ের তালিকা • ' + monthLabel(fk) + '</h3>' +
+      (exs.length ? '<div class="kv"><span><b>ব্যয়</b></span><span><b>' + U.formatTaka(exT) + '</b></span></div>' + exs.map(row).join('') : '') +
+      (ins.length ? '<div class="kv" style="margin-top:6px"><span><b>আয়</b></span><span><b>' + U.formatTaka(inT) + '</b></span></div>' + ins.map(row).join('') : '') +
+      '<small style="color:#5B635E">যেকোনো খাতে চাপলে অঙ্ক বদলানো যায়। নতুন মাসে আবার লিখতে হবে না।</small>' + btns + '</div>';
+  }
   function forecastCard() {
     var today = U.todayISO(), nk = U.addMonths(today.slice(0, 7) + '-01', 1).slice(0, 7), f = S.forecast(nk, today);
-    var head = '<div style="display:flex;justify-content:space-between;align-items:center"><b>আগামী মাসের পূর্বাভাস • ' + monthLabel(nk) + '</b>' + ic('chev', 18, '#5B635E', 2.4) + '</div>';
+    var head = '<a href="#/forecast" style="display:flex;justify-content:space-between;align-items:center;text-decoration:none;color:inherit"><b>আগামী মাসের পূর্বাভাস • ' + monthLabel(nk) + '</b>' + ic('chev', 18, '#5B635E', 2.4) + '</a>';
     if (!f.defs.length) {
-      return '<a class="card" href="#/forecast" style="text-decoration:none;color:inherit;display:block">' + head +
-        '<p class="hint" style="margin:6px 0 0">নিয়মিত আয় (যেমন বেতন) ও খরচ যোগ করলে এখানে আগামী মাসের হিসাব দেখা যাবে।</p></a>';
+      return '<div class="card">' + head + '<p class="hint" style="margin:6px 0 0">বাসা ভাড়া, বিল, বেতনের মতো যা প্রতি মাসে একই থাকে, তা একবার লিখে রাখুন। প্রতি মাসে নিজে থেকে ধরা হবে, আবার লিখতে হবে না।</p></div>';
     }
     var committed = Math.max(f.budget, f.spent) + f.loanDue, pct = f.income > 0 ? Math.min(100, Math.round(committed * 100 / f.income)) : 100;
-    return '<a class="card" href="#/forecast" style="text-decoration:none;color:inherit;display:block">' + head +
-      '<div class="kv"><span>প্রত্যাশিত আয়</span><span style="color:#16453A;font-weight:600">' + U.formatTaka(f.income) + '</span></div>' +
-      '<div class="kv"><span>নিয়মিত খরচ</span><span style="color:#8C1D18;font-weight:600">' + U.formatTaka(f.budget) + '</span></div>' +
-      '<div class="kv"><span>ঋণ শোধ</span><span style="color:#8C1D18;font-weight:600">' + U.formatTaka(f.loanDue) + '</span></div>' +
+    return '<div class="card">' + head +
+      '<div class="kv"><span><b>প্রত্যাশিত আয়</b></span><span style="color:#16453A;font-weight:700">' + U.formatTaka(f.income) + '</span></div>' +
+      '<div class="kv"><span><b>নিয়মিত খরচ (মোট)</b></span><span style="color:#8C1D18;font-weight:700">' + U.formatTaka(f.budget) + '</span></div>' +
+      '<div class="kv"><span><b>ঋণ শোধ</b></span><span style="color:#8C1D18;font-weight:700">' + U.formatTaka(f.loanDue) + '</span></div>' +
       '<div class="kv"><span><b>' + (f.over ? 'ঘাটতি' : 'হাতে থাকবে') + '</b></span><span style="font-weight:700;color:' + (f.over ? '#8C1D18' : '#1F5C4A') + '">' + U.formatTaka(Math.abs(f.free)) + '</span></div>' +
       '<div style="height:8px;background:#E4E8E5;border-radius:6px;overflow:hidden;margin-top:6px"><i style="display:block;height:100%;width:' + pct + '%;background:' + (f.over ? '#8C1D18' : '#1F5C4A') + ';border-radius:6px"></i></div>' +
-      '<small style="color:#5B635E">আয়ের ' + bn(pct) + '% আগেই ধরা আছে • বিস্তারিত দেখতে চাপুন</small></a>';
+      '<small style="color:#5B635E">আয়ের ' + bn(pct) + '% আগেই ধরা আছে • বিস্তারিত দেখতে চাপুন</small></div>';
   }
   function vMoney() {
     var rng = finRange(), rep = S.report(rng.from, rng.to, fin.tag);
@@ -622,6 +662,8 @@
       '<div class="grid2"><div class="mini"><span>মোট আয়</span><b>' + U.formatTaka(rep.income) + '</b></div>' +
       '<div class="mini"><span>মোট ব্যয়</span><b>' + U.formatTaka(rep.expense) + '</b></div></div></div>' +
       forecastCard() +
+      spendSplit(rng, rep) +
+      fixedCard() +
       '<div class="seg c5">' + FIN_TABS.map(function (t) {
         return '<button data-act="fin-kind" data-arg="' + t[0] + '" class="' + (fin.kind === t[0] ? 'active' : '') + '">' + t[1] + '</button>';
       }).join('') + '</div>';
@@ -647,16 +689,6 @@
       html += '<div class="bars">' + barsHtml(shown, total, isEx) +
         (list.length > 5 ? '<button class="linkbtn" data-act="fin-allcats">' + (fin.allCats ? 'কম দেখুন' : 'আরও দেখুন (আরও ' + bn(list.length - 5) + 'টি খাত)') + '</button>' : '') + '</div>';
     }
-    var fk = U.todayISO().slice(0, 7), fixed = S.defaultsFor(fk), fxEx = 0, fxIn = 0;
-    fixed.forEach(function (d) { if (d.type === 'income') fxIn += d.amount; else fxEx += d.amount; });
-    html += '<div class="card"><h3>নিয়মিত মাসিক আয়-ব্যয় (ফিক্সড)</h3>' +
-      (fixed.length ? fixed.map(function (d) {
-        return '<a class="kv" href="#/default/edit/' + h(d.id) + '/m" style="text-decoration:none;color:inherit"><span>' + h(d.name) + ' <small style="color:#5B635E">' + (d.type === 'income' ? 'আয়' : 'ব্যয়') + '</small></span><span style="font-weight:600;color:' + (d.type === 'income' ? '#16453A' : '#8C1D18') + '">' + U.formatTaka(d.amount) + '</span></a>';
-      }).join('') + '<div class="kv"><span><b>মাসে মোট নিয়মিত ব্যয়</b></span><span><b>' + U.formatTaka(fxEx) + '</b></span></div>' +
-        (fxIn ? '<div class="kv"><span><b>মাসে মোট নিয়মিত আয়</b></span><span><b>' + U.formatTaka(fxIn) + '</b></span></div>' : '')
-        : '<p class="hint" style="margin:4px 0">বাসা ভাড়া, বিল, কিস্তি বা বেতনের মতো যা প্রতি মাসে একই থাকে, তা একবার লিখে রাখুন।</p>') +
-      '<p class="hint" style="margin:6px 0">একবার লিখলে প্রতি মাসে নিজে থেকেই ধরা হবে, নতুন মাসে আবার লিখতে হবে না। অঙ্ক বদলালে শুধু বদলে দিন। অনিয়মিত খরচ নিচের "＋ ব্যয়" দিয়ে তারিখসহ লিখুন।</p>' +
-      '<div class="row2"><a class="btn outline small" href="#/default/new/expense/m">＋ নিয়মিত ব্যয়</a><a class="btn outline small" href="#/default/new/income/m">＋ নিয়মিত আয়</a></div></div>';
     html += '<div class="sec-h"><h2>লেনদেন (' + bn(rep.items.length) + 'টি)</h2><span>নতুন আগে</span></div>';
     if (!rep.items.length) html += '<div class="empty">এই সময়ে কোনো লেনদেন নেই। নিচের বাটন চেপে যোগ করুন।</div>';
     else {
